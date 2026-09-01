@@ -1,0 +1,22 @@
+{
+  "name": "sustainnova-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-Powered Audit, Risk & Corrective Action Management Platform",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:server": "npm run dev -w @sustainnova/server",
+    "dev:client": "npm run dev -w @sustainnova/client",
+    "build": "npm run build --workspaces --if-present",
+    "build:server": "npm run build -w @sustainnova/server",
+    "build:client": "npm run build -w @sustainnova/client",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
