@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAudit } from "@/hooks/useAudits";
 
@@ -10,10 +10,14 @@ const tabs = [
   { href: "findings", label: "Findings" },
   { href: "caps", label: "CAPs" },
   { href: "qa", label: "AI Assistant" },
+  { href: "compare", label: "Compare" },
+  { href: "logs", label: "Logs" },
+  { href: "export", label: "Export" },
 ] as const;
 
 export default function AuditDetailLayout({ children }: { children: React.ReactNode }) {
   const { id } = useParams<{ id: string }>();
+  const pathname = usePathname();
   const { data: audit, isLoading } = useAudit(id);
 
   if (isLoading) return <p className="text-gray-500">Loading audit...</p>;
@@ -61,15 +65,22 @@ export default function AuditDetailLayout({ children }: { children: React.ReactN
       {/* Tabs */}
       <div className="mb-6 border-b border-gray-200">
         <nav className="-mb-px flex gap-6">
-          {tabs.map((tab) => (
-            <Link
-              key={tab.href}
-              href={`/audits/${id}/${tab.href}`}
-              className="border-b-2 border-transparent pb-3 text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700"
-            >
-              {tab.label}
-            </Link>
-          ))}
+          {tabs.map((tab) => {
+            const isActive = pathname === `/audits/${id}/${tab.href}`;
+            return (
+              <Link
+                key={tab.href}
+                href={`/audits/${id}/${tab.href}`}
+                className={`border-b-2 pb-3 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "border-indigo-600 text-indigo-600"
+                    : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
+                }`}
+              >
+                {tab.label}
+              </Link>
+            );
+          })}
         </nav>
       </div>
 

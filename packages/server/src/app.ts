@@ -15,6 +15,12 @@ import { documentRoutes } from "./modules/documents/documentRoutes";
 import { findingRoutes } from "./modules/findings/findingRoutes";
 import { capRoutes } from "./modules/caps/capRoutes";
 import { qaRoutes } from "./modules/qa/qaRoutes";
+import { notificationRoutes } from "./modules/notifications/notificationRoutes";
+import { exportRoutes } from "./modules/export/exportRoutes";
+import { authenticate } from "./middleware/authenticate";
+import { googleKeyManager } from "./services/googleKeyManager";
+import { vectorStoreService } from "./services/vectorStoreService";
+import { documentService } from "./modules/documents/documentService";
 
 const app = express();
 
@@ -57,6 +63,57 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Debug: Google API key health (no external call, so it does not consume quota)
+app.get("/api/debug/ai-keys", authenticate, (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      activeKeyIndex: googleKeyManager.activeKeyIndex,
+      keyCount: googleKeyManager.hasFallback ? 2 : 1,
+      keys: googleKeyManager.getKeyHealth(),
+    },
+  });
+});
+
+// Debug: Vector index info
+app.get("/api/debug/vector-index", authenticate, async (_req, res, next) => {
+  try {
+    const info = await vectorStoreService.getIndexInfo();
+    res.json({ success: true, data: info });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Debug: Recreate vector index (drops all chunk vectors)
+app.post("/api/debug/reset-vector-index", authenticate, async (_req, res, next) => {
+  try {
+    await vectorStoreService.recreateIndex();
+    const info = await vectorStoreService.getIndexInfo();
+    res.json({
+      success: true,
+      data: info,
+      message: "Vector index reset. Reprocess documents to repopulate it.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Debug: Reprocess all documents from scratch (requires auth)
+app.post("/api/debug/reprocess-documents", authenticate, async (req, res, next) => {
+  try {
+    const result = await documentService.reprocessAll(req.user!.id);
+    res.json({
+      success: true,
+      data: result,
+      message: `${result.requeued} document(s) requeued for reprocessing.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // API v1 routes
 app.use("/api/v1/auth", authLimiter, authRoutes);
 app.use("/api/v1/organizations", organizationRoutes);
@@ -65,6 +122,8 @@ app.use("/api/v1/documents", documentRoutes);
 app.use("/api/v1/findings", findingRoutes);
 app.use("/api/v1/caps", capRoutes);
 app.use("/api/v1/qa", qaRoutes);
+app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/export", exportRoutes);
 
 // Multer error handler (file size, etc.)
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

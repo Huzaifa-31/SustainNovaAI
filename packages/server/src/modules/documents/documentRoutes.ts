@@ -23,6 +23,12 @@ router.get("/:id/status", DocumentController.getStatus);
 // Delete a document
 router.delete("/:id", DocumentController.delete);
 
+// Analyze an uploaded document (manual trigger)
+router.post("/:id/analyze", DocumentController.analyze);
+
+// Re-analyze a previously analyzed document
+router.post("/:id/reanalyze", DocumentController.reanalyze);
+
 // Retry a failed document
 router.post("/:id/retry", DocumentController.retry);
 

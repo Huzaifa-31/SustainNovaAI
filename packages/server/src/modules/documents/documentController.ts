@@ -129,6 +129,44 @@ export class DocumentController {
   }
 
   /**
+   * POST /documents/:id/analyze
+   * Trigger AI analysis for an uploaded document
+   */
+  static async analyze(req: Request, res: Response, next: NextFunction) {
+    try {
+      const params = getDocumentParamsSchema.parse(req.params);
+      const doc = await documentService.analyze(params.id, req.user!.id);
+
+      res.json({
+        success: true,
+        data: doc,
+        message: "Document queued for analysis",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /documents/:id/reanalyze
+   * Re-run AI analysis on a previously analyzed document
+   */
+  static async reanalyze(req: Request, res: Response, next: NextFunction) {
+    try {
+      const params = getDocumentParamsSchema.parse(req.params);
+      const doc = await documentService.reanalyze(params.id, req.user!.id);
+
+      res.json({
+        success: true,
+        data: doc,
+        message: "Document queued for re-analysis",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /documents/:id/retry
    * Retry a failed document
    */

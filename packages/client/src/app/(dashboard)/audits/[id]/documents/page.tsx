@@ -7,6 +7,8 @@ import {
   useUploadDocuments,
   useDeleteDocument,
   useRetryDocument,
+  useAnalyzeDocument,
+  useReanalyzeDocument,
   DocRecord,
 } from "@/hooks/useDocuments";
 
@@ -143,10 +145,14 @@ function DocumentRow({
   doc,
   onDelete,
   onRetry,
+  onAnalyze,
+  onReanalyze,
 }: {
   doc: DocRecord;
   onDelete: (docId: string) => void;
   onRetry: (docId: string) => void;
+  onAnalyze: (docId: string) => void;
+  onReanalyze: (docId: string) => void;
 }) {
   return (
     <div className="flex items-center gap-4 rounded-lg border border-gray-200 px-4 py-3 transition-colors hover:bg-gray-50">
@@ -174,6 +180,22 @@ function DocumentRow({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-2">
+        {doc.status === "uploaded" && (
+          <button
+            onClick={() => onAnalyze(doc._id)}
+            className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+          >
+            Analyze
+          </button>
+        )}
+        {doc.status === "completed" && (
+          <button
+            onClick={() => onReanalyze(doc._id)}
+            className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+          >
+            Re-analyze
+          </button>
+        )}
         {doc.status === "failed" && (
           <button
             onClick={() => onRetry(doc._id)}
@@ -204,6 +226,8 @@ export default function DocumentsPage() {
   const uploadMutation = useUploadDocuments();
   const deleteMutation = useDeleteDocument();
   const retryMutation = useRetryDocument();
+  const analyzeMutation = useAnalyzeDocument();
+  const reanalyzeMutation = useReanalyzeDocument();
 
   const handleUpload = useCallback(
     (files: File[]) => {
@@ -227,6 +251,21 @@ export default function DocumentsPage() {
     [auditId, retryMutation],
   );
 
+  const handleAnalyze = useCallback(
+    (docId: string) => {
+      analyzeMutation.mutate({ docId, auditId });
+    },
+    [auditId, analyzeMutation],
+  );
+
+  const handleReanalyze = useCallback(
+    (docId: string) => {
+      if (!confirm("Re-analyze this document? Existing findings and CAPs will be replaced.")) return;
+      reanalyzeMutation.mutate({ docId, auditId });
+    },
+    [auditId, reanalyzeMutation],
+  );
+
   const documents = data?.documents ?? [];
   const total = data?.total ?? 0;
   const totalPages = data?.totalPages ?? 1;
@@ -244,7 +283,7 @@ export default function DocumentsPage() {
         )}
         {uploadMutation.isSuccess && (
           <p className="mt-2 text-sm text-green-600">
-            {uploadMutation.data.length} document(s) uploaded successfully!
+            {uploadMutation.data.length} document(s) uploaded! Click <strong>Analyze</strong> on each file to start AI processing.
           </p>
         )}
       </div>
@@ -271,6 +310,8 @@ export default function DocumentsPage() {
                 doc={doc}
                 onDelete={handleDelete}
                 onRetry={handleRetry}
+                onAnalyze={handleAnalyze}
+                onReanalyze={handleReanalyze}
               />
             ))}
           </div>

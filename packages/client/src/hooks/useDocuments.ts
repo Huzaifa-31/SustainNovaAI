@@ -184,3 +184,29 @@ export function useRetryDocument() {
     },
   });
 }
+
+export function useAnalyzeDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ docId, auditId }: { docId: string; auditId: string }) => {
+      const { data } = await apiClient.post(`/documents/${docId}/analyze`);
+      return data.data as DocRecord;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["documents", variables.auditId] });
+    },
+  });
+}
+
+export function useReanalyzeDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ docId, auditId }: { docId: string; auditId: string }) => {
+      const { data } = await apiClient.post(`/documents/${docId}/reanalyze`);
+      return data.data as DocRecord;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["documents", variables.auditId] });
+    },
+  });
+}

@@ -2,6 +2,8 @@
 
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import { Bell } from "lucide-react";
+import { useUnreadNotificationCount } from "@/hooks/useNotifications";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
@@ -25,6 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm">
+            <NotificationBell />
             <span className="text-gray-500">{userName}</span>
             <button
               onClick={() => {
@@ -40,5 +43,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </nav>
       <main className="p-6">{children}</main>
     </div>
+  );
+}
+
+function NotificationBell() {
+  const { data: count = 0 } = useUnreadNotificationCount();
+
+  return (
+    <Link href="/notifications" className="relative text-gray-500 hover:text-gray-700">
+      <Bell className="h-5 w-5" />
+      {count > 0 && (
+        <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </Link>
   );
 }

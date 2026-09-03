@@ -3,10 +3,13 @@ import fs from "fs";
 import path from "path";
 import { DocumentModel, IDocument, Chunk } from "../../models";
 import { Audit } from "../../models";
+import { Finding } from "../../models/Finding";
+import { CAP } from "../../models/CAP";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
 import { enqueueDocumentProcessing } from "../../queues/documentQueue";
 import { vectorStoreService } from "../../services/vectorStoreService";
+import { auditLogService } from "../auditLogs/auditLogService";
 
 export interface UploadDocumentData {
   auditId: string;
@@ -99,10 +102,26 @@ class DocumentService {
       },
     });
 
-    // Enqueue document processing job
-    doc.status = "queued";
-    await doc.save();
-    await enqueueDocumentProcessing(doc._id.toString());
+    // Document stays in "uploaded" status — analysis is triggered manually
+
+    // Audit log
+    try {
+      await auditLogService.create({
+        organizationId: audit.organizationId.toString(),
+        auditId: data.auditId,
+        userId: data.uploadedBy,
+        action: "document.uploaded",
+        entity: "document",
+        entityId: doc._id.toString(),
+        details: {
+          originalName: doc.originalName,
+          fileSize: doc.fileSize,
+          mimeType: doc.mimeType,
+        },
+      });
+    } catch {
+      // Non-critical
+    }
 
     return doc;
   }
@@ -220,6 +239,95 @@ class DocumentService {
   }
 
   /**
+   * Analyze an uploaded document (manual trigger).
+   * Only works for documents that have not been analyzed yet (status = "uploaded").
+   */
+  async analyze(id: string, userId: string): Promise<IDocument> {
+    const doc = await DocumentModel.findById(id);
+    if (!doc) throw AppError.notFound("Document not found");
+
+    if (doc.status !== "uploaded") {
+      throw AppError.badRequest(
+        "Only documents with 'uploaded' status can be analyzed. Use re-analyze for already-processed documents.",
+      );
+    }
+
+    const audit = await Audit.findById(doc.auditId);
+    if (!audit) throw AppError.notFound("Audit not found");
+
+    await organizationService.verifyMembership(
+      audit.organizationId.toString(),
+      userId,
+    );
+
+    // Verify file still exists
+    if (!fs.existsSync(doc.storagePath)) {
+      throw AppError.badRequest(
+        "Original file no longer exists. Please re-upload the document.",
+      );
+    }
+
+    doc.status = "queued";
+    await doc.save();
+    await enqueueDocumentProcessing(doc._id.toString());
+
+    return doc;
+  }
+
+  /**
+   * Re-analyze a previously analyzed document.
+   * Cleans up old chunks, findings, and CAPs before re-processing.
+   */
+  async reanalyze(id: string, userId: string): Promise<IDocument> {
+    const doc = await DocumentModel.findById(id);
+    if (!doc) throw AppError.notFound("Document not found");
+
+    if (doc.status !== "completed") {
+      throw AppError.badRequest(
+        "Only documents with 'completed' status can be re-analyzed.",
+      );
+    }
+
+    const audit = await Audit.findById(doc.auditId);
+    if (!audit) throw AppError.notFound("Audit not found");
+
+    await organizationService.verifyMembership(
+      audit.organizationId.toString(),
+      userId,
+    );
+
+    // Verify file still exists
+    if (!fs.existsSync(doc.storagePath)) {
+      throw AppError.badRequest(
+        "Original file no longer exists. Please re-upload the document.",
+      );
+    }
+
+    // Clean up old vectors, chunks, findings, and CAPs
+    await vectorStoreService.removeDocumentChunks(doc._id.toString());
+    await Chunk.deleteMany({ documentId: doc._id });
+
+    const findings = await Finding.find({ documentId: doc._id });
+    const findingIds = findings.map((f) => f._id);
+    await CAP.deleteMany({ findingId: { $in: findingIds } });
+    await Finding.deleteMany({ documentId: doc._id });
+
+    // Reset status and re-enqueue
+    doc.status = "queued";
+    doc.errorMessage = undefined;
+    doc.processing = {
+      chunksGenerated: 0,
+      embeddingsGenerated: 0,
+    };
+    doc.processedAt = undefined;
+    await doc.save();
+
+    await enqueueDocumentProcessing(doc._id.toString());
+
+    return doc;
+  }
+
+  /**
    * Retry a failed document
    */
   async retry(id: string, userId: string): Promise<IDocument> {
@@ -262,6 +370,64 @@ class DocumentService {
     await enqueueDocumentProcessing(doc._id.toString());
 
     return doc;
+  }
+
+  /**
+   * Reprocess all documents from scratch.
+   * Useful after changing embedding models or dimensions.
+   */
+  async reprocessAll(userId: string): Promise<{ requeued: number; errors: string[] }> {
+    const documents = await DocumentModel.find({});
+    const errors: string[] = [];
+    let requeued = 0;
+
+    for (const doc of documents) {
+      try {
+        const audit = await Audit.findById(doc.auditId);
+        if (!audit) {
+          errors.push(`Skipping ${doc._id}: audit not found`);
+          continue;
+        }
+
+        await organizationService.verifyMembership(
+          audit.organizationId.toString(),
+          userId,
+        );
+
+        // Verify file still exists
+        if (!fs.existsSync(doc.storagePath)) {
+          errors.push(`Skipping ${doc.originalName}: original file no longer exists`);
+          continue;
+        }
+
+        // Clean up old vectors, chunks, findings, and CAPs
+        await vectorStoreService.removeDocumentChunks(doc._id.toString());
+        await Chunk.deleteMany({ documentId: doc._id });
+
+        const findings = await Finding.find({ documentId: doc._id });
+        const findingIds = findings.map((f) => f._id);
+        await CAP.deleteMany({ findingId: { $in: findingIds } });
+        await Finding.deleteMany({ documentId: doc._id });
+
+        // Reset document status
+        doc.status = "queued";
+        doc.errorMessage = undefined;
+        doc.processing = {
+          chunksGenerated: 0,
+          embeddingsGenerated: 0,
+        };
+        doc.processedAt = undefined;
+        await doc.save();
+
+        await enqueueDocumentProcessing(doc._id.toString());
+        requeued++;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Failed to reprocess ${doc._id}: ${message}`);
+      }
+    }
+
+    return { requeued, errors };
   }
 }
 

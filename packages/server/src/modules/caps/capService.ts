@@ -3,6 +3,8 @@ import { Audit } from "../../models";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
 import { capGenerationService } from "../../services/capGenerationService";
+import { notificationService } from "../notifications/notificationService";
+import { auditLogService } from "../auditLogs/auditLogService";
 
 class CAPService {
   /**
@@ -161,6 +163,8 @@ class CAPService {
     await cap.save();
     await capGenerationService.updateAuditCapCounts(cap.auditId.toString());
 
+    await this.logCAPAction(cap, userId, "cap.updated", { changes: input });
+
     return cap;
   }
 
@@ -195,6 +199,27 @@ class CAPService {
     await cap.save();
     await capGenerationService.updateAuditCapCounts(cap.auditId.toString());
 
+    await this.logCAPAction(cap, userId, approved ? "cap.approved" : "cap.rejected");
+
+    // Notify organization members when a CAP is approved
+    if (approved) {
+      try {
+        await notificationService.notifyOrganizationMembers(
+          cap.organizationId.toString(),
+          {
+            type: "cap_approval_needed",
+            title: "CAP approved",
+            message: "A corrective action plan has been approved and is ready for assignment.",
+            entityId: cap._id.toString(),
+            entityType: "cap",
+          },
+          { excludeUserId: userId },
+        );
+      } catch {
+        // Non-critical
+      }
+    }
+
     return cap;
   }
 
@@ -223,6 +248,25 @@ class CAPService {
 
     await cap.save();
     await capGenerationService.updateAuditCapCounts(cap.auditId.toString());
+
+    await this.logCAPAction(cap, userId, "cap.assigned", {
+      assignedTo: assignedToUserId,
+    });
+
+    // Notify assignee
+    try {
+      await notificationService.create({
+        userId: assignedToUserId,
+        organizationId: cap.organizationId.toString(),
+        type: "cap_assigned",
+        title: "CAP assigned to you",
+        message: "A corrective action plan has been assigned to you.",
+        entityId: cap._id.toString(),
+        entityType: "cap",
+      });
+    } catch {
+      // Non-critical: continue even if notification fails
+    }
 
     return cap;
   }
@@ -272,8 +316,30 @@ class CAPService {
     );
 
     const auditId = cap.auditId.toString();
+    await this.logCAPAction(cap, userId, "cap.deleted");
     await CAP.findByIdAndDelete(id);
     await capGenerationService.updateAuditCapCounts(auditId);
+  }
+
+  private async logCAPAction(
+    cap: ICAP,
+    userId: string,
+    action: string,
+    details?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await auditLogService.create({
+        organizationId: cap.organizationId.toString(),
+        auditId: cap.auditId.toString(),
+        userId,
+        action,
+        entity: "cap",
+        entityId: cap._id.toString(),
+        details,
+      });
+    } catch {
+      // Non-critical
+    }
   }
 }
 

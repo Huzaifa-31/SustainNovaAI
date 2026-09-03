@@ -4,9 +4,38 @@ import { env } from "../config/env";
 import { Finding, SEVERITY_WEIGHT, type FindingSeverity } from "../models/Finding";
 import { Chunk } from "../models/Chunk";
 import { Audit } from "../models/Audit";
+import { googleKeyManager } from "./googleKeyManager";
+import { notificationService } from "../modules/notifications/notificationService";
 import pino from "pino";
 
 const logger = pino({ name: "FindingExtractionService" });
+
+type GeminiContentBlock = { text?: unknown };
+
+function extractGeminiText(content: unknown): string {
+  if (typeof content === "string") return content;
+
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object") {
+          const text = (block as GeminiContentBlock).text;
+          return typeof text === "string" ? text : "";
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (content && typeof content === "object") {
+    const text = (content as GeminiContentBlock).text;
+    return typeof text === "string" ? text : "";
+  }
+
+  return "";
+}
 
 // Zod schema for a single extracted finding
 const findingSchema = z.object({
@@ -63,12 +92,10 @@ Return JSON array. Return [] if no findings.`;
 const WINDOW_SIZE = 3000 * 4; // approximate chars for 3000 tokens
 
 class FindingExtractionService {
-  private llm: ChatGoogleGenerativeAI;
-
-  constructor() {
-    this.llm = new ChatGoogleGenerativeAI({
+  private createLLM(apiKey: string) {
+    return new ChatGoogleGenerativeAI({
       model: env.GOOGLE_CHAT_MODEL,
-      apiKey: env.GOOGLE_API_KEY,
+      apiKey,
       temperature: 0.1,
       maxOutputTokens: 4096,
     });
@@ -166,15 +193,17 @@ class FindingExtractionService {
   ): Promise<z.infer<typeof findingSchema>[]> {
     const userMessage = `--- Page ${pageStart}${pageEnd > pageStart ? `-${pageEnd}` : ""} ---\n${text}`;
 
-    const response = await this.llm.invoke([
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userMessage },
-    ]);
+    const response = await googleKeyManager.withFallback((apiKey) =>
+      this.createLLM(apiKey).invoke([
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userMessage },
+      ]),
+    );
 
-    const content =
-      typeof response.content === "string"
-        ? response.content
-        : JSON.stringify(response.content);
+    const content = extractGeminiText(response.content);
+    if (!content) {
+      throw new Error("Gemini returned an empty text response");
+    }
 
     logger.info(
       { pageStart, pageEnd, contentLength: content.length, preview: content.substring(0, 200) },
@@ -281,7 +310,7 @@ class FindingExtractionService {
   ): Promise<void> {
     const severity = finding.severity as FindingSeverity;
 
-    await Finding.create({
+    const created = await Finding.create({
       auditId: meta.auditId,
       organizationId: meta.organizationId,
       documentId: meta.documentId,
@@ -304,6 +333,27 @@ class FindingExtractionService {
       possibleDuplicateIds: [],
       duplicateResolved: false,
     });
+
+    // Notify organization members about critical findings
+    if (severity === "Critical") {
+      try {
+        await notificationService.notifyOrganizationMembers(
+          meta.organizationId,
+          {
+            type: "critical_finding",
+            title: "Critical finding detected",
+            message: `A critical finding was identified: "${finding.title}"`,
+            entityId: created._id.toString(),
+            entityType: "finding",
+          },
+        );
+      } catch (notifyError) {
+        logger.warn(
+          { notifyError, findingId: created._id.toString() },
+          "Failed to send critical_finding notification",
+        );
+      }
+    }
   }
 
   /**

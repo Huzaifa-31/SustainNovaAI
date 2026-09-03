@@ -27,6 +27,62 @@ class VectorStoreService {
       // Index doesn't exist, create it
     }
 
+    await this.createIndex();
+  }
+
+  /**
+   * Drop the existing vector index and all chunk vectors, then recreate it.
+   * Use this after changing embedding model or dimensions.
+   */
+  async recreateIndex(): Promise<void> {
+    try {
+      await redisConnection.call("FT.DROPINDEX", INDEX_NAME, "DD");
+      logger.info("Vector index dropped");
+    } catch (error) {
+      const err = error as Error;
+      if (!err.message?.includes("Unknown Index")) {
+        logger.error({ error: err.message }, "Failed to drop vector index");
+        throw error;
+      }
+      logger.info("Vector index did not exist, nothing to drop");
+    }
+
+    this.indexReady = false;
+    await this.createIndex();
+  }
+
+  /**
+   * Get current index info including the configured dimension.
+   */
+  async getIndexInfo(): Promise<{ exists: boolean; dimensions?: number; name: string }> {
+    try {
+      const info = await redisConnection.call("FT.INFO", INDEX_NAME) as unknown[];
+      // FT.INFO returns alternating key/value pairs. Find the dimension value.
+      let dimensions: number | undefined;
+      for (let i = 0; i < info.length; i += 2) {
+        const key = String(info[i]);
+        if (key === "attributes") {
+          const attributes = info[i + 1] as unknown[];
+          for (const attr of attributes) {
+            const attrArray = attr as unknown[];
+            for (let j = 0; j < attrArray.length; j += 2) {
+              if (String(attrArray[j]) === "DIM") {
+                dimensions = Number(attrArray[j + 1]);
+                break;
+              }
+            }
+            if (dimensions) break;
+          }
+          break;
+        }
+      }
+      return { exists: true, dimensions, name: INDEX_NAME };
+    } catch {
+      return { exists: false, name: INDEX_NAME };
+    }
+  }
+
+  private async createIndex(): Promise<void> {
     try {
       await redisConnection.call(
         "FT.CREATE",

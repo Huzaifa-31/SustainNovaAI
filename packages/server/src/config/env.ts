@@ -12,7 +12,9 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   // Google Gemini — used for embeddings + chat (finding extraction, RAG Q&A)
   GOOGLE_API_KEY: z.string().min(1, "GOOGLE_API_KEY is required"),
-  GOOGLE_EMBEDDING_MODEL: z.string().default("text-embedding-004"),
+  GOOGLE_API_KEY2: z.string().optional(),
+  // Google embedding model. text-embedding-004 is deprecated; gemini-embedding-001 is current.
+  GOOGLE_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
   GOOGLE_CHAT_MODEL: z.string().default("gemini-3.6-flash"),
   UPLOAD_DIR: z.string().default("./uploads"),
   MAX_FILE_SIZE_MB: z.coerce.number().default(50),

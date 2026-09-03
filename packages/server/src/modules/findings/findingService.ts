@@ -3,6 +3,7 @@ import { Audit } from "../../models";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
 import { findingExtractionService } from "../../services/findingExtractionService";
+import { auditLogService } from "../auditLogs/auditLogService";
 
 class FindingService {
   /**
@@ -117,6 +118,21 @@ class FindingService {
     await findingExtractionService.updateAuditFindingCounts(
       finding.auditId.toString(),
     );
+
+    // Audit log
+    try {
+      await auditLogService.create({
+        organizationId: finding.organizationId.toString(),
+        auditId: finding.auditId.toString(),
+        userId,
+        action: input.reviewStatus ? `finding.${input.reviewStatus}` : "finding.updated",
+        entity: "finding",
+        entityId: finding._id.toString(),
+        details: { changes: Object.keys(input) },
+      });
+    } catch {
+      // Non-critical
+    }
 
     return finding;
   }

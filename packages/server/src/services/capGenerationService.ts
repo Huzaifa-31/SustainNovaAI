@@ -3,9 +3,37 @@ import { z } from "zod";
 import { env } from "../config/env";
 import { CAP, Finding, Audit } from "../models";
 import type { IFinding, FindingSeverity } from "../models/Finding";
+import { googleKeyManager } from "./googleKeyManager";
 import pino from "pino";
 
 const logger = pino({ name: "CAPGenerationService" });
+
+type GeminiContentBlock = { text?: unknown };
+
+function extractGeminiText(content: unknown): string {
+  if (typeof content === "string") return content;
+
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object") {
+          const text = (block as GeminiContentBlock).text;
+          return typeof text === "string" ? text : "";
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (content && typeof content === "object") {
+    const text = (content as GeminiContentBlock).text;
+    return typeof text === "string" ? text : "";
+  }
+
+  return "";
+}
 
 const capSchema = z.object({
   rootCause: z.string().min(1),
@@ -30,12 +58,10 @@ Return JSON with these fields:
 Return ONLY a JSON object, no markdown, no explanation.`;
 
 class CAPGenerationService {
-  private llm: ChatGoogleGenerativeAI;
-
-  constructor() {
-    this.llm = new ChatGoogleGenerativeAI({
+  private createLLM(apiKey: string) {
+    return new ChatGoogleGenerativeAI({
       model: env.GOOGLE_CHAT_MODEL,
-      apiKey: env.GOOGLE_API_KEY,
+      apiKey,
       temperature: 0.2,
       maxOutputTokens: 2048,
     });
@@ -69,26 +95,28 @@ class CAPGenerationService {
    */
   async generateForFinding(finding: IFinding): Promise<void> {
     try {
-      const response = await this.llm.invoke([
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: JSON.stringify({
-            title: finding.title,
-            description: finding.description,
-            category: finding.category,
-            severity: finding.severity,
-            evidenceText: finding.evidenceText,
-            recommendedAction: finding.recommendedAction,
-            suggestedOwner: finding.suggestedOwner,
-          }),
-        },
-      ]);
+      const response = await googleKeyManager.withFallback((apiKey) =>
+        this.createLLM(apiKey).invoke([
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({
+              title: finding.title,
+              description: finding.description,
+              category: finding.category,
+              severity: finding.severity,
+              evidenceText: finding.evidenceText,
+              recommendedAction: finding.recommendedAction,
+              suggestedOwner: finding.suggestedOwner,
+            }),
+          },
+        ]),
+      );
 
-      const content =
-        typeof response.content === "string"
-          ? response.content
-          : JSON.stringify(response.content);
+      const content = extractGeminiText(response.content);
+      if (!content) {
+        throw new Error("Gemini returned an empty text response");
+      }
 
       const jsonStr = this.extractJson(content);
       const parsed = JSON.parse(jsonStr);

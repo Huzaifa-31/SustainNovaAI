@@ -14,3 +14,10 @@ export {
 } from "./Finding";
 export { CAP, type ICAP, type CAPStatus } from "./CAP";
 export { ChatMessage, type IChatMessage, type IChatSource } from "./ChatMessage";
+export {
+  Notification,
+  type INotification,
+  type NotificationType,
+  type NotificationEntityType,
+} from "./Notification";
+export { AuditLog, type IAuditLog } from "./AuditLog";

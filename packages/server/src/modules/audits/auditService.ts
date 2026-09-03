@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { Audit } from "../../models/Audit";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
@@ -9,6 +10,7 @@ export class AuditService {
       organizationId: string;
       name: string;
       description?: string;
+      previousAuditId?: string;
       auditPeriod?: { start?: string; end?: string };
     },
   ) {
@@ -21,6 +23,7 @@ export class AuditService {
         createdBy: userId,
         name: input.name,
         description: input.description,
+        previousAuditId: input.previousAuditId,
         auditPeriod: input.auditPeriod
           ? {
               start: input.auditPeriod.start ? new Date(input.auditPeriod.start) : undefined,
@@ -63,7 +66,7 @@ export class AuditService {
     return audit;
   }
 
-  async update(auditId: string, userId: string, input: { name?: string; description?: string; status?: string; auditPeriod?: { start?: string; end?: string } }) {
+  async update(auditId: string, userId: string, input: { name?: string; description?: string; status?: string; previousAuditId?: string; auditPeriod?: { start?: string; end?: string } }) {
     const audit = await Audit.findById(auditId);
     if (!audit) throw AppError.notFound("Audit not found");
 
@@ -72,6 +75,11 @@ export class AuditService {
     if (input.name !== undefined) audit.name = input.name;
     if (input.description !== undefined) audit.description = input.description;
     if (input.status !== undefined) audit.status = input.status as "active" | "completed" | "archived";
+    if (input.previousAuditId !== undefined) {
+      audit.previousAuditId = input.previousAuditId
+        ? new mongoose.Types.ObjectId(input.previousAuditId)
+        : undefined;
+    }
     if (input.auditPeriod) {
       const current: { start?: Date; end?: Date } = audit.auditPeriod ?? {};
       const updated: { start?: Date; end?: Date } = {};

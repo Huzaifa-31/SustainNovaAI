@@ -1,7 +1,9 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { useState, useRef, useEffect, FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   useChatHistory,
   useAskQuestion,
@@ -63,9 +65,17 @@ function MessageBubble({ message }: { message: ChatMessageRecord }) {
             : "bg-white border border-gray-200 text-gray-800"
         }`}
       >
-        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-          {message.content}
-        </div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+            {message.content}
+          </div>
+        ) : (
+          <div className="prose prose-sm max-w-none text-sm leading-relaxed text-gray-800">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
 
         {/* Sources */}
         {message.sources && message.sources.length > 0 && (
@@ -239,10 +249,19 @@ export default function QAPage() {
               : "Unknown error"}
           </p>
           {askQuestion.error instanceof Error &&
-            askQuestion.error.message.includes("quota") && (
+            askQuestion.error.message.toLowerCase().includes("rate limit") && (
               <p className="mt-1 text-xs">
-                You may have hit the Gemini free tier daily request limit. Try
-                again in a few minutes, or use a different API key.
+                The AI service is currently rate-limited. The server already
+                retried with backoff and fallback keys. Please wait 30-60
+                seconds and try again.
+              </p>
+            )}
+          {askQuestion.error instanceof Error &&
+            askQuestion.error.message.toLowerCase().includes("quota") && (
+              <p className="mt-1 text-xs">
+                You may have hit the Gemini free-tier daily request limit. If
+                you added a second key, make sure it belongs to a different
+                Google project; otherwise quotas are shared.
               </p>
             )}
         </div>

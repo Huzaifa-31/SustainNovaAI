@@ -11,7 +11,7 @@ export const redisConnection = new IORedis(env.REDIS_URL, {
 export const documentQueue = new Queue("document-processing", {
   connection: redisConnection,
   defaultJobOptions: {
-    attempts: 3,
+    attempts: 1,
     backoff: {
       type: "exponential",
       delay: 2000, // 2s, 4s, 8s

@@ -8,6 +8,7 @@ import { embeddingService } from "../services/embeddingService";
 import { vectorStoreService } from "../services/vectorStoreService";
 import { findingExtractionService } from "../services/findingExtractionService";
 import { capGenerationService } from "../services/capGenerationService";
+import { notificationService } from "../modules/notifications/notificationService";
 import pino from "pino";
 
 const logger = pino({ name: "DocumentWorker" });
@@ -146,6 +147,33 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
       { documentId, chunks: chunks.length, embeddings: embeddings.length, findings: findingCount, capsGenerated },
       "Document processing completed",
     );
+
+    // Notify uploader and org members
+    try {
+      await notificationService.notifyOrganizationMembers(
+        doc.organizationId.toString(),
+        {
+          type: "processing_completed",
+          title: "Document processing completed",
+          message: `"${doc.originalName}" has been processed. ${findingCount} finding(s) and ${capsGenerated} CAP(s) generated.`,
+          entityId: doc._id.toString(),
+          entityType: "document",
+        },
+        { excludeUserId: doc.uploadedBy.toString() },
+      );
+
+      await notificationService.create({
+        userId: doc.uploadedBy.toString(),
+        organizationId: doc.organizationId.toString(),
+        type: "processing_completed",
+        title: "Document processing completed",
+        message: `"${doc.originalName}" has been processed. ${findingCount} finding(s) and ${capsGenerated} CAP(s) generated.`,
+        entityId: doc._id.toString(),
+        entityType: "document",
+      });
+    } catch (notifyError) {
+      logger.warn({ notifyError }, "Failed to send processing_completed notification");
+    }
   } catch (error) {
     // Mark document as failed
     doc.status = "failed";
@@ -156,6 +184,21 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
       { documentId, error: doc.errorMessage },
       "Document processing failed",
     );
+
+    // Notify uploader of failure
+    try {
+      await notificationService.create({
+        userId: doc.uploadedBy.toString(),
+        organizationId: doc.organizationId.toString(),
+        type: "processing_failed",
+        title: "Document processing failed",
+        message: `"${doc.originalName}" could not be processed: ${doc.errorMessage}`,
+        entityId: doc._id.toString(),
+        entityType: "document",
+      });
+    } catch (notifyError) {
+      logger.warn({ notifyError }, "Failed to send processing_failed notification");
+    }
 
     throw error; // Re-throw so BullMQ can retry
   }
