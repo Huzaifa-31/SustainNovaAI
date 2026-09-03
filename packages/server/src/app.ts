@@ -13,6 +13,8 @@ import { organizationRoutes } from "./modules/organizations/organizationRoutes";
 import { auditRoutes } from "./modules/audits/auditRoutes";
 import { documentRoutes } from "./modules/documents/documentRoutes";
 import { findingRoutes } from "./modules/findings/findingRoutes";
+import { capRoutes } from "./modules/caps/capRoutes";
+import { qaRoutes } from "./modules/qa/qaRoutes";
 
 const app = express();
 
@@ -61,6 +63,8 @@ app.use("/api/v1/organizations", organizationRoutes);
 app.use("/api/v1/audits", auditRoutes);
 app.use("/api/v1/documents", documentRoutes);
 app.use("/api/v1/findings", findingRoutes);
+app.use("/api/v1/caps", capRoutes);
+app.use("/api/v1/qa", qaRoutes);
 
 // Multer error handler (file size, etc.)
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

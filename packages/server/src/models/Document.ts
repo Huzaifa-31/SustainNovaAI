@@ -7,6 +7,7 @@ export type DocumentStatus =
   | "chunking"
   | "embedding"
   | "extracting"
+  | "generating_caps"
   | "completed"
   | "failed";
 
@@ -40,6 +41,7 @@ export interface IDocument extends MongooseDocument {
   processing: {
     chunksGenerated: number;
     embeddingsGenerated: number;
+    capsGenerated?: number;
     startedAt?: Date;
     completedAt?: Date;
   };
@@ -81,6 +83,7 @@ const documentSchema = new Schema<IDocument>(
         "chunking",
         "embedding",
         "extracting",
+        "generating_caps",
         "completed",
         "failed",
       ],
@@ -107,6 +110,7 @@ const documentSchema = new Schema<IDocument>(
     processing: {
       chunksGenerated: { type: Number, default: 0 },
       embeddingsGenerated: { type: Number, default: 0 },
+      capsGenerated: { type: Number, default: 0 },
       startedAt: { type: Date },
       completedAt: { type: Date },
     },

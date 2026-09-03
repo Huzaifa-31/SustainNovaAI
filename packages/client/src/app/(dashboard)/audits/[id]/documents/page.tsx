@@ -18,7 +18,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const ACTIVE_STATUSES = new Set(["queued", "parsing", "chunking", "embedding", "extracting"]);
+const ACTIVE_STATUSES = new Set(["queued", "parsing", "chunking", "embedding", "extracting", "generating_caps"]);
 
 function getStatusBadge(status: DocRecord["status"]) {
   const isActive = ACTIVE_STATUSES.has(status);
@@ -29,6 +29,7 @@ function getStatusBadge(status: DocRecord["status"]) {
     chunking: "bg-yellow-100 text-yellow-700",
     embedding: "bg-purple-100 text-purple-700",
     extracting: "bg-orange-100 text-orange-700",
+    generating_caps: "bg-indigo-100 text-indigo-700",
     completed: "bg-green-100 text-green-700",
     failed: "bg-red-100 text-red-700",
   };
@@ -39,6 +40,7 @@ function getStatusBadge(status: DocRecord["status"]) {
     chunking: "Chunking",
     embedding: "Embedding",
     extracting: "Analyzing",
+    generating_caps: "Generating CAPs",
     completed: "Completed",
     failed: "Failed",
   };

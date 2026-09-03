@@ -7,6 +7,7 @@ import { textChunkingService } from "../services/textChunkingService";
 import { embeddingService } from "../services/embeddingService";
 import { vectorStoreService } from "../services/vectorStoreService";
 import { findingExtractionService } from "../services/findingExtractionService";
+import { capGenerationService } from "../services/capGenerationService";
 import pino from "pino";
 
 const logger = pino({ name: "DocumentWorker" });
@@ -123,16 +124,26 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
       doc._id.toString(),
     );
 
-    // Step 12: Update document with final results
+    // Step 12: Generate CAPs from findings
+    doc.status = "generating_caps";
+    await doc.save();
+
+    logger.info({ documentId, auditId: doc.auditId.toString() }, "Generating CAPs");
+    const capsGenerated = await capGenerationService.generateForAudit(
+      doc.auditId.toString(),
+    );
+
+    // Step 13: Update document with final results
     doc.processing.chunksGenerated = chunks.length;
     doc.processing.embeddingsGenerated = embeddings.length;
+    doc.processing.capsGenerated = capsGenerated;
     doc.status = "completed";
     doc.processing.completedAt = new Date();
     doc.processedAt = new Date();
     await doc.save();
 
     logger.info(
-      { documentId, chunks: chunks.length, embeddings: embeddings.length, findings: findingCount },
+      { documentId, chunks: chunks.length, embeddings: embeddings.length, findings: findingCount, capsGenerated },
       "Document processing completed",
     );
   } catch (error) {

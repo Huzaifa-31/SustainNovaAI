@@ -10,6 +10,7 @@ export type DocumentStatusType =
   | "chunking"
   | "embedding"
   | "extracting"
+  | "generating_caps"
   | "completed"
   | "failed";
 
@@ -44,6 +45,7 @@ export interface DocRecord {
   processing: {
     chunksGenerated: number;
     embeddingsGenerated: number;
+    capsGenerated?: number;
     startedAt?: string;
     completedAt?: string;
   };
@@ -89,7 +91,7 @@ export function useDocuments(
       const docs = query.state.data?.documents;
       if (!docs) return false;
       const activeStatuses: DocumentStatusType[] = [
-        "queued", "parsing", "chunking", "embedding", "extracting",
+        "queued", "parsing", "chunking", "embedding", "extracting", "generating_caps",
       ];
       return docs.some((d) => activeStatuses.includes(d.status)) ? 3000 : false;
     },
@@ -119,7 +121,7 @@ export function useDocumentStatus(docId: string, enabled = true) {
       // Poll every 3 seconds while processing
       const status = query.state.data?.status;
       const activeStatuses: DocumentStatusType[] = [
-        "queued", "parsing", "chunking", "embedding", "extracting",
+        "queued", "parsing", "chunking", "embedding", "extracting", "generating_caps",
       ];
       if (status && activeStatuses.includes(status)) {
         return 3000;

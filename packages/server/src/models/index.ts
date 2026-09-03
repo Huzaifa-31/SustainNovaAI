@@ -12,3 +12,5 @@ export {
   type ConfidenceSignal,
   SEVERITY_WEIGHT,
 } from "./Finding";
+export { CAP, type ICAP, type CAPStatus } from "./CAP";
+export { ChatMessage, type IChatMessage, type IChatSource } from "./ChatMessage";
