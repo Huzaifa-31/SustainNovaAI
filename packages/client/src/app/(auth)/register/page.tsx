@@ -52,7 +52,7 @@ export default function RegisterPage() {
           setLoading(false);
           return;
         }
-        router.push("/audits");
+        router.push("/dashboard");
         router.refresh();
       }
     } catch (err: unknown) {

@@ -77,15 +77,24 @@ class CAPGenerationService {
     });
 
     let generated = 0;
+    let failed = 0;
     for (const finding of findings) {
       const exists = await CAP.findOne({ findingId: finding._id });
       if (exists) continue;
 
-      await this.generateForFinding(finding);
-      generated++;
+      try {
+        await this.generateForFinding(finding);
+        generated++;
+      } catch (error) {
+        failed++;
+        logger.error(
+          { findingId: finding._id, error: (error as Error).message },
+          "CAP generation failed for finding; continuing with remaining findings",
+        );
+      }
     }
 
-    logger.info({ auditId, generated }, "CAP generation completed for audit");
+    logger.info({ auditId, generated, failed }, "CAP generation completed for audit");
     await this.updateAuditCapCounts(auditId);
     return generated;
   }
@@ -118,8 +127,14 @@ class CAPGenerationService {
         throw new Error("Gemini returned an empty text response");
       }
 
-      const jsonStr = this.extractJson(content);
-      const parsed = JSON.parse(jsonStr);
+      const parsed = this.extractJson(content);
+      if (parsed === null) {
+        logger.warn(
+          { findingId: finding._id, preview: content.substring(0, 200) },
+          "CAP response was truncated/malformed; skipping CAP for this finding",
+        );
+        return;
+      }
       const result = capSchema.safeParse(parsed);
 
       if (!result.success) {
@@ -177,18 +192,62 @@ class CAPGenerationService {
     await Audit.findByIdAndUpdate(auditId, { capStatus: counts });
   }
 
-  private extractJson(content: string): string {
+  /**
+   * Extract the first complete JSON object from an LLM response.
+   * Uses a string-aware balanced-brace scan so truncated responses or
+   * trailing prose cannot produce an invalid match. Returns null when no
+   * complete object can be salvaged.
+   */
+  private extractJson(content: string): unknown | null {
     // Strip code fences if present
-    let cleaned = content
+    const cleaned = content
       .replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
       .trim();
 
-    // Try full object match
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) return match[0];
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let objStart = -1;
 
-    return cleaned;
+    for (let i = 0; i < cleaned.length; i++) {
+      const ch = cleaned[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (ch === "{") {
+        if (depth === 0) objStart = i;
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+        if (depth === 0 && objStart !== -1) {
+          const objStr = cleaned.substring(objStart, i + 1);
+          try {
+            return JSON.parse(objStr);
+          } catch {
+            // First complete-looking object was malformed; keep scanning
+            objStart = -1;
+          }
+        }
+      }
+    }
+
+    return null;
   }
 }
 

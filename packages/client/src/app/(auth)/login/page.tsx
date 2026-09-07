@@ -37,8 +37,7 @@ export default function LoginPage() {
         if (data?.data?.token) {
           localStorage.setItem("auth_token", data.data.token);
         }
-        const role = data?.data?.user?.role;
-        router.push(role === "admin" ? "/dashboard" : "/audits");
+        router.push("/dashboard");
         router.refresh();
       }
     } catch {

@@ -210,9 +210,8 @@ class FindingExtractionService {
       "LLM response received",
     );
 
-    // Parse JSON from response
-    const jsonStr = this.extractJson(content);
-    const parsed = JSON.parse(jsonStr);
+    // Parse JSON from response (robust against truncated LLM output)
+    const parsed = this.parseFindings(content);
 
     // Validate with Zod
     const result = findingsArraySchema.safeParse(parsed);
@@ -229,28 +228,31 @@ class FindingExtractionService {
   }
 
   /**
-   * Extract JSON array from LLM response (handles markdown code blocks and truncation)
+   * Parse findings JSON from an LLM response.
+   * Handles markdown code fences and truncated responses by extracting
+   * complete JSON objects one-by-one and skipping malformed ones, so a
+   * truncated response never throws.
    */
-  private extractJson(content: string): string {
+  private parseFindings(content: string): unknown[] {
     // Strip markdown code fences
-    let cleaned = content
+    const cleaned = content
       .replace(/```json\s*/g, "")
       .replace(/```\s*/g, "")
       .trim();
 
-    // Try full JSON parse first
+    // Try full JSON array parse first
     const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       try {
-        JSON.parse(jsonMatch[0]);
-        return jsonMatch[0];
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed)) return parsed;
       } catch {
         // Full parse failed, fall through to object-by-object extraction
       }
     }
 
     // Extract complete JSON objects one by one (handles truncated responses)
-    const objects: string[] = [];
+    const objects: unknown[] = [];
     let depth = 0;
     let inString = false;
     let escape = false;
@@ -284,8 +286,7 @@ class FindingExtractionService {
         if (depth === 0 && objStart !== -1) {
           const objStr = cleaned.substring(objStart, i + 1);
           try {
-            JSON.parse(objStr);
-            objects.push(objStr);
+            objects.push(JSON.parse(objStr));
           } catch {
             // Skip incomplete/malformed objects
           }
@@ -295,10 +296,18 @@ class FindingExtractionService {
     }
 
     if (objects.length > 0) {
-      return "[" + objects.join(",") + "]";
+      logger.warn(
+        { salvaged: objects.length },
+        "LLM response was truncated/malformed; salvaged complete finding objects",
+      );
+    } else {
+      logger.warn(
+        { preview: cleaned.substring(0, 200) },
+        "LLM response could not be parsed as JSON; no findings extracted for this window",
+      );
     }
 
-    return cleaned;
+    return objects;
   }
 
   /**
