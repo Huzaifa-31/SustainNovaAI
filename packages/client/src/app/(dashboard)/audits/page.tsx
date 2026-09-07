@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { useAudits } from "@/hooks/useAudits";
 
 export default function AuditsPage() {
-  const { data: audits, isLoading, error } = useAudits();
+  const { data: session } = useSession();
+  const organizationId = session?.user?.organizationId;
+  const { data: audits, isLoading, error } = useAudits(organizationId);
 
   return (
     <div>

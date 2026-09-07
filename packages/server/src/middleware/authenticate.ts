@@ -12,7 +12,7 @@ declare global {
         userId: string;
         email: string;
         role: string;
-        organizationId: string;
+        organizationId?: string;
       };
     }
   }
@@ -55,4 +55,30 @@ export function authorize(...allowedRoles: string[]) {
     }
     next();
   };
+}
+
+/**
+ * Restrict access to super admins only.
+ */
+export function requireAdmin(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user || req.user.role !== "admin") {
+    return next(AppError.forbidden("Admin access required"));
+  }
+  next();
+}
+
+/**
+ * Restrict access to organization owners. Admins are also allowed.
+ */
+export function requireOrganization(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) {
+    return next(AppError.unauthorized("Authentication required"));
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  if (req.user.role === "organization" && req.user.organizationId) {
+    return next();
+  }
+  return next(AppError.forbidden("Organization access required"));
 }

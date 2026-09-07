@@ -10,6 +10,7 @@ import { AppError } from "./utils/AppError";
 import { openApiSpec } from "./docs/openapi";
 import { authRoutes } from "./modules/auth/authRoutes";
 import { organizationRoutes } from "./modules/organizations/organizationRoutes";
+import { factoryRoutes } from "./modules/factories/factoryRoutes";
 import { auditRoutes } from "./modules/audits/auditRoutes";
 import { documentRoutes } from "./modules/documents/documentRoutes";
 import { findingRoutes } from "./modules/findings/findingRoutes";
@@ -17,6 +18,7 @@ import { capRoutes } from "./modules/caps/capRoutes";
 import { qaRoutes } from "./modules/qa/qaRoutes";
 import { notificationRoutes } from "./modules/notifications/notificationRoutes";
 import { exportRoutes } from "./modules/export/exportRoutes";
+import { dashboardRoutes } from "./modules/dashboard/dashboardRoutes";
 import { authenticate } from "./middleware/authenticate";
 import { googleKeyManager } from "./services/googleKeyManager";
 import { vectorStoreService } from "./services/vectorStoreService";
@@ -117,6 +119,7 @@ app.post("/api/debug/reprocess-documents", authenticate, async (req, res, next) 
 // API v1 routes
 app.use("/api/v1/auth", authLimiter, authRoutes);
 app.use("/api/v1/organizations", organizationRoutes);
+app.use("/api/v1/factories", factoryRoutes);
 app.use("/api/v1/audits", auditRoutes);
 app.use("/api/v1/documents", documentRoutes);
 app.use("/api/v1/findings", findingRoutes);
@@ -124,6 +127,7 @@ app.use("/api/v1/caps", capRoutes);
 app.use("/api/v1/qa", qaRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/export", exportRoutes);
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 // Multer error handler (file size, etc.)
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {

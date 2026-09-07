@@ -62,6 +62,32 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       (session as unknown as { accessToken: string }).accessToken = (token.accessToken as string) ?? "";
       return session;
     },
+    authorized({ auth, request: { nextUrl } }) {
+      const isLoggedIn = !!auth?.user;
+      const role = auth?.user?.role;
+      const isAppRoute = [
+        "/dashboard",
+        "/audits",
+        "/organizations",
+        "/factories",
+        "/notifications",
+        "/findings",
+        "/caps",
+        "/reports",
+        "/assistant",
+        "/suppliers",
+        "/settings",
+        "/help",
+      ].some((path) => nextUrl.pathname.startsWith(path));
+
+      if (isAppRoute) {
+        if (!isLoggedIn) return false;
+        if (role !== "admin" && role !== "organization") return false;
+        return true;
+      }
+
+      return true;
+    },
   },
   pages: {
     signIn: "/login",

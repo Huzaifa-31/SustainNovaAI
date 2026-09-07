@@ -5,6 +5,8 @@ export interface IOrganization extends Document {
   description?: string;
   ownerUserId: mongoose.Types.ObjectId;
   memberIds: mongoose.Types.ObjectId[];
+  services: string[];
+  tier: "basic" | "pro" | "enterprise";
   settings: {
     riskWeights: { critical: number; high: number; medium: number; low: number };
   };
@@ -18,6 +20,8 @@ const organizationSchema = new Schema<IOrganization>(
     description: { type: String },
     ownerUserId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     memberIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    services: [{ type: String, default: ["audit", "compare", "assistant", "documents", "findings", "caps"] }],
+    tier: { type: String, enum: ["basic", "pro", "enterprise"], default: "basic" },
     settings: {
       riskWeights: {
         critical: { type: Number, default: 4 },

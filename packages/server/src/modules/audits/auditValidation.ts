@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const createAuditSchema = z.object({
   organizationId: z.string().min(1, "Organization is required"),
+  factoryId: z.string().min(1, "Factory is required"),
   name: z.string().min(1, "Name is required").max(300),
   description: z.string().max(2000).optional(),
   previousAuditId: z.string().optional(),

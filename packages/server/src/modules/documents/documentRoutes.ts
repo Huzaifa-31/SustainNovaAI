@@ -32,4 +32,7 @@ router.post("/:id/reanalyze", DocumentController.reanalyze);
 // Retry a failed document
 router.post("/:id/retry", DocumentController.retry);
 
+// Cancel an in-progress document analysis
+router.post("/:id/cancel", DocumentController.cancel);
+
 export { router as documentRoutes };

@@ -1,19 +1,46 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useOrganization } from "@/hooks/useOrganizations";
+import { useOrganization, useUpdateOrganizationServices } from "@/hooks/useOrganizations";
 import { useOrgAudits } from "@/hooks/useAudits";
+
+const AVAILABLE_SERVICES = ["audit", "compare", "assistant", "documents", "findings", "caps"];
 
 export default function OrganizationDetailPage() {
   const { orgId } = useParams<{ orgId: string }>();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
   const { data: org, isLoading: orgLoading } = useOrganization(orgId);
   const { data: auditData, isLoading: auditsLoading } = useOrgAudits(orgId);
+  const updateServices = useUpdateOrganizationServices();
+
+  const [services, setServices] = useState<string[]>([]);
+  const [tier, setTier] = useState<"basic" | "pro" | "enterprise">("basic");
+
+  useEffect(() => {
+    if (org) {
+      setServices(org.services ?? []);
+      setTier(org.tier ?? "basic");
+    }
+  }, [org]);
 
   if (orgLoading) return <p className="text-gray-500">Loading...</p>;
   if (!org) return <p className="text-red-600">Organization not found</p>;
 
   const members = Array.isArray(org.memberIds) ? org.memberIds : [];
+
+  const handleServiceToggle = (service: string) => {
+    setServices((prev) =>
+      prev.includes(service) ? prev.filter((s) => s !== service) : [...prev, service],
+    );
+  };
+
+  const handleSaveAccess = () => {
+    updateServices.mutate({ orgId, services, tier });
+  };
 
   return (
     <div>
@@ -21,6 +48,57 @@ export default function OrganizationDetailPage() {
         <h2 className="text-2xl font-bold">{org.name}</h2>
         {org.description && <p className="mt-1 text-gray-500">{org.description}</p>}
       </div>
+
+      {/* Service Access — admin only */}
+      {isAdmin && (
+        <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-3 text-lg font-semibold">Service Access</h3>
+          <p className="mb-4 text-sm text-gray-500">
+            Choose which features this organization can access and its subscription tier.
+          </p>
+
+          <div className="mb-5">
+            <label className="mb-2 block text-sm font-medium text-gray-700">Allowed services</label>
+            <div className="flex flex-wrap gap-3">
+              {AVAILABLE_SERVICES.map((service) => (
+                <label
+                  key={service}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={services.includes(service)}
+                    onChange={() => handleServiceToggle(service)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="capitalize text-gray-700">{service}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-5">
+            <label className="mb-2 block text-sm font-medium text-gray-700">Tier</label>
+            <select
+              value={tier}
+              onChange={(e) => setTier(e.target.value as "basic" | "pro" | "enterprise")}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="basic">Basic</option>
+              <option value="pro">Pro</option>
+              <option value="enterprise">Enterprise</option>
+            </select>
+          </div>
+
+          <button
+            onClick={handleSaveAccess}
+            disabled={updateServices.isPending}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {updateServices.isPending ? "Saving..." : "Save access settings"}
+          </button>
+        </section>
+      )}
 
       {/* Members Section */}
       <section className="mb-8">

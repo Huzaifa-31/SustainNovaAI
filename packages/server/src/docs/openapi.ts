@@ -81,7 +81,7 @@ export const openApiSpec: OpenAPIV3.Document = {
           _id: objectId,
           email: { type: "string", format: "email" },
           name: { type: "string" },
-          role: { type: "string", enum: ["admin", "analyst", "viewer"] },
+          role: { type: "string", enum: ["admin", "organization"] },
           organizationId: { type: "string", nullable: true },
           createdAt: { type: "string", format: "date-time" },
         },
@@ -419,7 +419,7 @@ export const openApiSpec: OpenAPIV3.Document = {
                 required: ["email"],
                 properties: {
                   email: { type: "string", format: "email" },
-                  role: { type: "string", enum: ["admin", "analyst", "viewer"] },
+                  role: { type: "string", enum: ["admin", "organization"] },
                 },
               },
             },

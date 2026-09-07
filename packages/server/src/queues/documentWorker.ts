@@ -13,6 +13,20 @@ import pino from "pino";
 
 const logger = pino({ name: "DocumentWorker" });
 
+class CancellationError extends Error {
+  constructor() {
+    super("Analysis cancelled by user");
+    this.name = "CancellationError";
+  }
+}
+
+async function checkCancelled(documentId: string): Promise<void> {
+  const doc = await DocumentModel.findById(documentId);
+  if (doc && doc.status === "cancelled") {
+    throw new CancellationError();
+  }
+}
+
 async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
   const { documentId } = job.data;
 
@@ -23,11 +37,16 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
     throw new Error(`Document not found: ${documentId}`);
   }
 
+  // Respect cancellation before starting
+  await checkCancelled(documentId);
+
   try {
     // Step 1: Update status to parsing
     doc.status = "parsing";
     doc.processing.startedAt = new Date();
     await doc.save();
+
+    await checkCancelled(documentId);
 
     // Step 2: Extract text
     logger.info({ documentId }, "Extracting text");
@@ -47,6 +66,8 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
     doc.qualityReport.summary = `${extraction.pages.length}/${extraction.pageCount} pages processed`;
 
     await doc.save();
+
+    await checkCancelled(documentId);
 
     // Step 3: Update status to chunking
     doc.status = "chunking";
@@ -78,6 +99,8 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
     }));
 
     await Chunk.insertMany(chunkDocs);
+
+    await checkCancelled(documentId);
 
     // Step 6: Update status to embedding
     doc.status = "embedding";
@@ -115,6 +138,8 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
 
     await vectorStoreService.storeChunks(redisChunks);
 
+    await checkCancelled(documentId);
+
     // Step 10: Update status to extracting
     doc.status = "extracting";
     await doc.save();
@@ -124,6 +149,8 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
     const findingCount = await findingExtractionService.extractFromDocument(
       doc._id.toString(),
     );
+
+    await checkCancelled(documentId);
 
     // Step 12: Generate CAPs from findings
     doc.status = "generating_caps";
@@ -175,6 +202,12 @@ async function processDocument(job: Job<ProcessDocumentJob>): Promise<void> {
       logger.warn({ notifyError }, "Failed to send processing_completed notification");
     }
   } catch (error) {
+    // Respect cancellation: keep cancelled status and exit cleanly
+    if (error instanceof CancellationError) {
+      logger.info({ documentId }, "Document processing cancelled");
+      return;
+    }
+
     // Mark document as failed
     doc.status = "failed";
     doc.errorMessage = error instanceof Error ? error.message : "Unknown error";

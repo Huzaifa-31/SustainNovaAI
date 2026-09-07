@@ -38,8 +38,23 @@ export default function OrganizationsPage() {
               href={`/organizations/${org._id}`}
               className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md"
             >
-              <h3 className="text-lg font-semibold text-gray-900">{org.name}</h3>
+              <div className="mb-2 flex items-start justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">{org.name}</h3>
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold uppercase text-blue-700">
+                  {org.tier}
+                </span>
+              </div>
               {org.description && <p className="mt-1 text-sm text-gray-500 line-clamp-2">{org.description}</p>}
+              <div className="mt-3 flex flex-wrap gap-1">
+                {(org.services ?? []).map((service) => (
+                  <span
+                    key={service}
+                    className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase text-gray-600"
+                  >
+                    {service}
+                  </span>
+                ))}
+              </div>
               <p className="mt-3 text-xs text-gray-400">
                 Created {new Date(org.createdAt).toLocaleDateString()}
               </p>

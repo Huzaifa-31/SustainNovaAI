@@ -12,7 +12,8 @@ export type DocumentStatusType =
   | "extracting"
   | "generating_caps"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export interface DocRecord {
   _id: string;
@@ -207,6 +208,20 @@ export function useReanalyzeDocument() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["documents", variables.auditId] });
+    },
+  });
+}
+
+export function useCancelDocumentAnalysis() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ docId, auditId }: { docId: string; auditId: string }) => {
+      const { data } = await apiClient.post(`/documents/${docId}/cancel`);
+      return data.data as DocRecord;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["documents", variables.auditId] });
+      queryClient.invalidateQueries({ queryKey: ["documents", "status", variables.docId] });
     },
   });
 }

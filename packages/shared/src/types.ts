@@ -6,8 +6,7 @@
 
 export const UserRole = {
   ADMIN: "admin",
-  ANALYST: "analyst",
-  VIEWER: "viewer",
+  ORGANIZATION: "organization",
 } as const;
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
@@ -22,6 +21,7 @@ export const DocumentStatus = {
   VALIDATING: "validating",
   COMPLETED: "completed",
   FAILED: "failed",
+  CANCELLED: "cancelled",
 } as const;
 export type DocumentStatus = (typeof DocumentStatus)[keyof typeof DocumentStatus];
 
@@ -123,6 +123,8 @@ export interface Organization {
   description?: string;
   ownerUserId: string;
   memberIds: string[];
+  services: string[];
+  tier: "basic" | "pro" | "enterprise";
   settings?: {
     riskWeights?: { critical: number; high: number; medium: number; low: number };
   };
@@ -130,9 +132,21 @@ export interface Organization {
   updatedAt: string;
 }
 
+export interface Factory {
+  _id: string;
+  organizationId: string;
+  createdBy: string;
+  name: string;
+  description?: string;
+  location?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Audit {
   _id: string;
   organizationId: string;
+  factoryId: string;
   createdBy: string;
   name: string;
   description?: string;
@@ -328,9 +342,10 @@ export interface AuthResponse {
 
 export interface CreateAuditRequest {
   organizationId: string;
+  factoryId: string;
   name: string;
   description?: string;
-  auditPeriod?: { start: string; end: string };
+  auditPeriod?: { start?: string; end?: string };
 }
 
 export interface ChatRequest {

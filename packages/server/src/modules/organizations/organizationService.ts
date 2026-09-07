@@ -1,28 +1,61 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 import { Organization } from "../../models/Organization";
 import { User } from "../../models/User";
 import { AppError } from "../../utils/AppError";
 
+const BCRYPT_ROUNDS = 12;
+
 export class OrganizationService {
-  async create(userId: string, input: { name: string; description?: string }) {
+  async create(
+    adminId: string,
+    input: {
+      name: string;
+      description?: string;
+      ownerName: string;
+      ownerEmail: string;
+      ownerPassword: string;
+    },
+  ) {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
+      const existingUser = await User.findOne({ email: input.ownerEmail.toLowerCase() }).session(session);
+      if (existingUser) {
+        throw AppError.conflict("Owner email already registered", "DUPLICATE_EMAIL");
+      }
+
+      const passwordHash = await bcrypt.hash(input.ownerPassword, BCRYPT_ROUNDS);
+
       const [org] = await Organization.create(
         [
           {
             name: input.name,
             description: input.description,
-            ownerUserId: userId,
-            memberIds: [userId],
+            ownerUserId: adminId,
+            memberIds: [adminId],
           },
         ],
         { session },
       );
 
-      // Set user's organizationId and role to admin
-      await User.findByIdAndUpdate(userId, { organizationId: org._id, role: "admin" }, { session });
+      const [owner] = await User.create(
+        [
+          {
+            email: input.ownerEmail.toLowerCase(),
+            passwordHash,
+            name: input.ownerName,
+            role: "organization",
+            organizationId: org._id,
+          },
+        ],
+        { session },
+      );
+
+      org.ownerUserId = owner._id as mongoose.Types.ObjectId;
+      org.memberIds = [owner._id as mongoose.Types.ObjectId];
+      await org.save({ session });
 
       await session.commitTransaction();
       return org;
@@ -34,15 +67,25 @@ export class OrganizationService {
     }
   }
 
-  async listForUser(userId: string) {
+  async listForUser(userId: string, role: string) {
+    if (role === "admin") {
+      return Organization.find().lean();
+    }
     return Organization.find({
       $or: [{ ownerUserId: userId }, { memberIds: userId }],
     }).lean();
   }
 
-  async getById(orgId: string) {
+  async getById(orgId: string, userId: string, role: string) {
     const org = await Organization.findById(orgId).populate("memberIds", "name email role").lean();
     if (!org) throw AppError.notFound("Organization not found");
+
+    if (role !== "admin") {
+      if (!org.memberIds.some((id) => id.toString() === userId)) {
+        throw AppError.forbidden("You do not have access to this organization");
+      }
+    }
+
     return org;
   }
 
@@ -54,6 +97,15 @@ export class OrganizationService {
     }
     if (input.name !== undefined) org.name = input.name;
     if (input.description !== undefined) org.description = input.description;
+    await org.save();
+    return org;
+  }
+
+  async updateServices(orgId: string, input: { services?: string[]; tier?: "basic" | "pro" | "enterprise" }) {
+    const org = await Organization.findById(orgId);
+    if (!org) throw AppError.notFound("Organization not found");
+    if (input.services !== undefined) org.services = input.services;
+    if (input.tier !== undefined) org.tier = input.tier;
     await org.save();
     return org;
   }
@@ -76,7 +128,7 @@ export class OrganizationService {
     await org.save();
 
     user.organizationId = org._id as mongoose.Types.ObjectId;
-    if (role) user.role = role as "admin" | "analyst" | "viewer";
+    if (role) user.role = role as "admin" | "organization";
     await user.save();
 
     return org;
@@ -101,8 +153,17 @@ export class OrganizationService {
 
   /**
    * Verify that a user belongs to the given organization.
+   * Admins bypass the membership check.
    */
-  async verifyMembership(orgId: string, userId: string): Promise<void> {
+  async verifyMembership(orgId: string, userId: string, role?: string): Promise<void> {
+    if (role === "admin") return;
+
+    // If role is not provided, look it up from the user record.
+    if (!role) {
+      const user = await User.findById(userId).lean();
+      if (user?.role === "admin") return;
+    }
+
     const org = await Organization.findById(orgId);
     if (!org) throw AppError.notFound("Organization not found");
     if (!org.memberIds.some((id) => id.toString() === userId)) {

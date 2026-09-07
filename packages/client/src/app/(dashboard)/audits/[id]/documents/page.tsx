@@ -9,6 +9,7 @@ import {
   useRetryDocument,
   useAnalyzeDocument,
   useReanalyzeDocument,
+  useCancelDocumentAnalysis,
   DocRecord,
 } from "@/hooks/useDocuments";
 
@@ -34,6 +35,7 @@ function getStatusBadge(status: DocRecord["status"]) {
     generating_caps: "bg-indigo-100 text-indigo-700",
     completed: "bg-green-100 text-green-700",
     failed: "bg-red-100 text-red-700",
+    cancelled: "bg-gray-100 text-gray-600",
   };
   const labels: Record<string, string> = {
     uploaded: "Uploaded",
@@ -45,6 +47,7 @@ function getStatusBadge(status: DocRecord["status"]) {
     generating_caps: "Generating CAPs",
     completed: "Completed",
     failed: "Failed",
+    cancelled: "Cancelled",
   };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${styles[status] ?? "bg-gray-100 text-gray-600"} ${isActive ? "animate-pulse" : ""}`}>
@@ -147,12 +150,14 @@ function DocumentRow({
   onRetry,
   onAnalyze,
   onReanalyze,
+  onCancel,
 }: {
   doc: DocRecord;
   onDelete: (docId: string) => void;
   onRetry: (docId: string) => void;
   onAnalyze: (docId: string) => void;
   onReanalyze: (docId: string) => void;
+  onCancel: (docId: string) => void;
 }) {
   return (
     <div className="flex items-center gap-4 rounded-lg border border-gray-200 px-4 py-3 transition-colors hover:bg-gray-50">
@@ -188,7 +193,7 @@ function DocumentRow({
             Analyze
           </button>
         )}
-        {doc.status === "completed" && (
+        {(doc.status === "completed" || doc.status === "cancelled") && (
           <button
             onClick={() => onReanalyze(doc._id)}
             className="rounded border border-indigo-300 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
@@ -202,6 +207,14 @@ function DocumentRow({
             className="rounded border border-yellow-300 px-2 py-1 text-xs font-medium text-yellow-700 hover:bg-yellow-50"
           >
             Retry
+          </button>
+        )}
+        {ACTIVE_STATUSES.has(doc.status) && (
+          <button
+            onClick={() => onCancel(doc._id)}
+            className="rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+          >
+            Cancel
           </button>
         )}
         <button
@@ -228,6 +241,7 @@ export default function DocumentsPage() {
   const retryMutation = useRetryDocument();
   const analyzeMutation = useAnalyzeDocument();
   const reanalyzeMutation = useReanalyzeDocument();
+  const cancelMutation = useCancelDocumentAnalysis();
 
   const handleUpload = useCallback(
     (files: File[]) => {
@@ -264,6 +278,14 @@ export default function DocumentsPage() {
       reanalyzeMutation.mutate({ docId, auditId });
     },
     [auditId, reanalyzeMutation],
+  );
+
+  const handleCancel = useCallback(
+    (docId: string) => {
+      if (!confirm("Cancel the analysis for this document?")) return;
+      cancelMutation.mutate({ docId, auditId });
+    },
+    [auditId, cancelMutation],
   );
 
   const documents = data?.documents ?? [];
@@ -312,6 +334,7 @@ export default function DocumentsPage() {
                 onRetry={handleRetry}
                 onAnalyze={handleAnalyze}
                 onReanalyze={handleReanalyze}
+                onCancel={handleCancel}
               />
             ))}
           </div>

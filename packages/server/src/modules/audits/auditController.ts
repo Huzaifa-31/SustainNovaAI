@@ -6,8 +6,8 @@ export class AuditController {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const input = createAuditSchema.parse(req.body);
-      const userId = req.user!._id!.toString();
-      const audit = await auditService.create(userId, input);
+      const user = req.user!;
+      const audit = await auditService.create(user._id!.toString(), user.role, input);
       res.status(201).json({ success: true, data: audit });
     } catch (error) {
       next(error);
@@ -16,12 +16,14 @@ export class AuditController {
 
   async listForOrg(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.user!._id!.toString();
-      const { status, page, limit } = req.query;
-      const result = await auditService.listForOrg(req.params.orgId, userId, {
+      const user = req.user!;
+      const userId = user._id!.toString();
+      const { status, page, limit, factoryId } = req.query;
+      const result = await auditService.listForOrg(req.params.orgId, userId, user.role, {
         status: status as string | undefined,
         page: page ? Number(page) : undefined,
         limit: limit ? Number(limit) : undefined,
+        factoryId: factoryId as string | undefined,
       });
       res.json({
         success: true,
@@ -35,8 +37,10 @@ export class AuditController {
 
   async listForUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.user!._id!.toString();
-      const audits = await auditService.listForUser(userId);
+      const user = req.user!;
+      const userId = user._id!.toString();
+      const organizationId = req.query.organizationId as string | undefined;
+      const audits = await auditService.listForUser(userId, user.role, organizationId);
       res.json({ success: true, data: audits });
     } catch (error) {
       next(error);
@@ -45,8 +49,8 @@ export class AuditController {
 
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.user!._id!.toString();
-      const audit = await auditService.getById(req.params.id, userId);
+      const user = req.user!;
+      const audit = await auditService.getById(req.params.id, user._id!.toString(), user.role);
       res.json({ success: true, data: audit });
     } catch (error) {
       next(error);
@@ -56,8 +60,8 @@ export class AuditController {
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const input = updateAuditSchema.parse(req.body);
-      const userId = req.user!._id!.toString();
-      const audit = await auditService.update(req.params.id, userId, input);
+      const user = req.user!;
+      const audit = await auditService.update(req.params.id, user._id!.toString(), user.role, input);
       res.json({ success: true, data: audit });
     } catch (error) {
       next(error);
@@ -66,8 +70,8 @@ export class AuditController {
 
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = req.user!._id!.toString();
-      const audit = await auditService.delete(req.params.id, userId);
+      const user = req.user!;
+      const audit = await auditService.delete(req.params.id, user._id!.toString(), user.role);
       res.json({ success: true, data: audit });
     } catch (error) {
       next(error);

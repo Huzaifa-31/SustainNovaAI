@@ -184,4 +184,23 @@ export class DocumentController {
       next(error);
     }
   }
+
+  /**
+   * POST /documents/:id/cancel
+   * Cancel an in-progress document analysis
+   */
+  static async cancel(req: Request, res: Response, next: NextFunction) {
+    try {
+      const params = getDocumentParamsSchema.parse(req.params);
+      const doc = await documentService.cancelAnalysis(params.id, req.user!.id);
+
+      res.json({
+        success: true,
+        data: doc,
+        message: "Document analysis cancelled",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

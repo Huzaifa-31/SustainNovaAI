@@ -1,25 +1,35 @@
 import mongoose from "mongoose";
 import { Audit } from "../../models/Audit";
+import { Factory } from "../../models/Factory";
+import { User } from "../../models/User";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
 
 export class AuditService {
   async create(
     userId: string,
+    role: string,
     input: {
       organizationId: string;
+      factoryId: string;
       name: string;
       description?: string;
       previousAuditId?: string;
       auditPeriod?: { start?: string; end?: string };
     },
   ) {
-    // Verify user belongs to the organization
-    await organizationService.verifyMembership(input.organizationId, userId);
+    // Verify user belongs to the organization and factory
+    await organizationService.verifyMembership(input.organizationId, userId, role);
+    const factory = await Factory.findById(input.factoryId).lean();
+    if (!factory) throw AppError.notFound("Factory not found");
+    if (factory.organizationId.toString() !== input.organizationId) {
+      throw AppError.forbidden("Factory does not belong to this organization");
+    }
 
     const [audit] = await Audit.create([
       {
         organizationId: input.organizationId,
+        factoryId: input.factoryId,
         createdBy: userId,
         name: input.name,
         description: input.description,
@@ -36,8 +46,8 @@ export class AuditService {
     return audit;
   }
 
-  async listForOrg(orgId: string, userId: string, query?: { status?: string; page?: number; limit?: number }) {
-    await organizationService.verifyMembership(orgId, userId);
+  async listForOrg(orgId: string, userId: string, role: string, query?: { status?: string; page?: number; limit?: number; factoryId?: string }) {
+    await organizationService.verifyMembership(orgId, userId, role);
 
     const page = query?.page ?? 1;
     const limit = Math.min(query?.limit ?? 20, 100);
@@ -45,6 +55,7 @@ export class AuditService {
 
     const filter: Record<string, unknown> = { organizationId: orgId };
     if (query?.status) filter.status = query.status;
+    if (query?.factoryId) filter.factoryId = query.factoryId;
 
     const [audits, total] = await Promise.all([
       Audit.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
@@ -54,23 +65,37 @@ export class AuditService {
     return { audits, total, page, limit };
   }
 
-  async listForUser(userId: string) {
+  async listForUser(userId: string, role: string, organizationId?: string) {
+    if (role === "admin") {
+      if (organizationId) {
+        return Audit.find({ organizationId }).sort({ createdAt: -1 }).lean();
+      }
+      return Audit.find().sort({ createdAt: -1 }).lean();
+    }
+
+    // Organization users see all audits within their organization.
+    const targetOrgId = organizationId ?? (await this.resolveUserOrganizationId(userId));
+    if (targetOrgId) {
+      await organizationService.verifyMembership(targetOrgId, userId, role);
+      return Audit.find({ organizationId: targetOrgId }).sort({ createdAt: -1 }).lean();
+    }
+
     return Audit.find({ createdBy: userId }).sort({ createdAt: -1 }).lean();
   }
 
-  async getById(auditId: string, userId: string) {
+  async getById(auditId: string, userId: string, role: string) {
     const audit = await Audit.findById(auditId).lean();
     if (!audit) throw AppError.notFound("Audit not found");
 
-    await organizationService.verifyMembership(audit.organizationId.toString(), userId);
+    await organizationService.verifyMembership(audit.organizationId.toString(), userId, role);
     return audit;
   }
 
-  async update(auditId: string, userId: string, input: { name?: string; description?: string; status?: string; previousAuditId?: string; auditPeriod?: { start?: string; end?: string } }) {
+  async update(auditId: string, userId: string, role: string, input: { name?: string; description?: string; status?: string; previousAuditId?: string; auditPeriod?: { start?: string; end?: string } }) {
     const audit = await Audit.findById(auditId);
     if (!audit) throw AppError.notFound("Audit not found");
 
-    await organizationService.verifyMembership(audit.organizationId.toString(), userId);
+    await organizationService.verifyMembership(audit.organizationId.toString(), userId, role);
 
     if (input.name !== undefined) audit.name = input.name;
     if (input.description !== undefined) audit.description = input.description;
@@ -94,15 +119,20 @@ export class AuditService {
     return audit;
   }
 
-  async delete(auditId: string, userId: string) {
+  async delete(auditId: string, userId: string, role: string) {
     const audit = await Audit.findById(auditId);
     if (!audit) throw AppError.notFound("Audit not found");
 
-    await organizationService.verifyMembership(audit.organizationId.toString(), userId);
+    await organizationService.verifyMembership(audit.organizationId.toString(), userId, role);
 
     audit.status = "archived";
     await audit.save();
     return audit;
+  }
+
+  private async resolveUserOrganizationId(userId: string): Promise<string | undefined> {
+    const user = await User.findById(userId).lean();
+    return user?.organizationId?.toString();
   }
 }
 

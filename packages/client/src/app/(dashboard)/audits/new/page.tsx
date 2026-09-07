@@ -1,26 +1,40 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useCreateAudit } from "@/hooks/useAudits";
 import { useOrganizations } from "@/hooks/useOrganizations";
+import { useFactories } from "@/hooks/useFactories";
 
 function NewAuditForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
+  const userOrgId = session?.user?.organizationId;
   const preselectedOrgId = searchParams.get("orgId") || "";
+  const preselectedFactoryId = searchParams.get("factoryId") || "";
+  const initialOrgId = isAdmin ? preselectedOrgId : preselectedOrgId || userOrgId || "";
 
   const createAudit = useCreateAudit();
   const { data: orgs } = useOrganizations();
+  const { data: factories } = useFactories(initialOrgId || undefined);
 
   const [form, setForm] = useState({
-    organizationId: preselectedOrgId,
+    organizationId: initialOrgId,
+    factoryId: preselectedFactoryId,
     name: "",
     description: "",
     startDate: "",
     endDate: "",
   });
   const [error, setError] = useState("");
+
+  const availableFactories = useMemo(() => {
+    if (!factories) return [];
+    return factories.filter((f) => f.organizationId === form.organizationId);
+  }, [factories, form.organizationId]);
 
   function update(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -34,10 +48,15 @@ function NewAuditForm() {
       setError("Please select an organization");
       return;
     }
+    if (!form.factoryId) {
+      setError("Please select a factory");
+      return;
+    }
 
     try {
       const audit = await createAudit.mutateAsync({
         organizationId: form.organizationId,
+        factoryId: form.factoryId,
         name: form.name,
         description: form.description || undefined,
         auditPeriod: {
@@ -67,13 +86,37 @@ function NewAuditForm() {
             id="org"
             required
             value={form.organizationId}
-            onChange={(e) => update("organizationId", e.target.value)}
+            onChange={(e) => {
+              update("organizationId", e.target.value);
+              update("factoryId", "");
+            }}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
           >
             <option value="">Select an organization</option>
             {orgs?.map((org) => (
               <option key={org._id} value={org._id}>
                 {org.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="factory" className="block text-sm font-medium text-gray-700">
+            Factory
+          </label>
+          <select
+            id="factory"
+            required
+            value={form.factoryId}
+            onChange={(e) => update("factoryId", e.target.value)}
+            disabled={!form.organizationId}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 sm:text-sm"
+          >
+            <option value="">Select a factory</option>
+            {availableFactories.map((factory) => (
+              <option key={factory._id} value={factory._id}>
+                {factory.name}
               </option>
             ))}
           </select>

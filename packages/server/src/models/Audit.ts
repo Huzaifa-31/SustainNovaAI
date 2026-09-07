@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IAudit extends Document {
   organizationId: mongoose.Types.ObjectId;
+  factoryId: mongoose.Types.ObjectId;
   createdBy: mongoose.Types.ObjectId;
   name: string;
   description?: string;
@@ -18,6 +19,7 @@ export interface IAudit extends Document {
 const auditSchema = new Schema<IAudit>(
   {
     organizationId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
+    factoryId: { type: Schema.Types.ObjectId, ref: "Factory", required: true, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     name: { type: String, required: true, trim: true },
     description: { type: String },

@@ -7,7 +7,7 @@ import { Finding } from "../../models/Finding";
 import { CAP } from "../../models/CAP";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
-import { enqueueDocumentProcessing } from "../../queues/documentQueue";
+import { enqueueDocumentProcessing, documentQueue } from "../../queues/documentQueue";
 import { vectorStoreService } from "../../services/vectorStoreService";
 import { auditLogService } from "../auditLogs/auditLogService";
 
@@ -368,6 +368,60 @@ class DocumentService {
     await doc.save();
 
     await enqueueDocumentProcessing(doc._id.toString());
+
+    return doc;
+  }
+
+  /**
+   * Cancel an in-progress document analysis.
+   * Removes the job from the queue if waiting and marks the document as cancelled.
+   */
+  async cancelAnalysis(id: string, userId: string): Promise<IDocument> {
+    const doc = await DocumentModel.findById(id);
+    if (!doc) throw AppError.notFound("Document not found");
+
+    const activeStatuses: IDocument["status"][] = [
+      "queued",
+      "parsing",
+      "chunking",
+      "embedding",
+      "extracting",
+      "generating_caps",
+    ];
+
+    if (!activeStatuses.includes(doc.status)) {
+      throw AppError.badRequest(
+        `Cannot cancel analysis: document status is '${doc.status}'`,
+      );
+    }
+
+    const audit = await Audit.findById(doc.auditId);
+    if (!audit) throw AppError.notFound("Audit not found");
+
+    await organizationService.verifyMembership(
+      audit.organizationId.toString(),
+      userId,
+    );
+
+    // Try to remove waiting jobs for this document from the queue
+    try {
+      const jobs = await documentQueue.getJobs([
+        "waiting",
+        "paused",
+        "delayed",
+      ]);
+      for (const job of jobs) {
+        if (job.data.documentId === id) {
+          await job.remove();
+        }
+      }
+    } catch {
+      // Non-critical: job may already be active
+    }
+
+    doc.status = "cancelled";
+    doc.errorMessage = "Analysis cancelled by user";
+    await doc.save();
 
     return doc;
   }

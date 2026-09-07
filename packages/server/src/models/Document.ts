@@ -9,7 +9,8 @@ export type DocumentStatus =
   | "extracting"
   | "generating_caps"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export interface IDocument extends MongooseDocument {
   auditId: mongoose.Types.ObjectId;
@@ -86,6 +87,7 @@ const documentSchema = new Schema<IDocument>(
         "generating_caps",
         "completed",
         "failed",
+        "cancelled",
       ],
       default: "uploaded",
       index: true,

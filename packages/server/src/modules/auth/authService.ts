@@ -12,7 +12,7 @@ interface TokenPayload {
   userId: string;
   email: string;
   role: string;
-  organizationId: string;
+  organizationId?: string;
 }
 
 export class AuthService {
@@ -64,7 +64,7 @@ export class AuthService {
               email: input.email.toLowerCase(),
               passwordHash,
               name: input.name,
-              role: "admin",
+              role: "organization",
               organizationId,
             },
           ],
@@ -77,23 +77,8 @@ export class AuthService {
         return { user, token };
       }
 
-      // No org — create user without org (they can join/create later)
-      const [user] = await User.create(
-        [
-          {
-            email: input.email.toLowerCase(),
-            passwordHash,
-            name: input.name,
-            role: "analyst",
-          },
-        ],
-        { session },
-      );
-
-      await session.commitTransaction();
-
-      const token = this.generateToken(user);
-      return { user, token };
+      // organizationName is required by validation; this branch is unreachable.
+      throw AppError.badRequest("Organization name is required", "ORGANIZATION_REQUIRED");
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -136,8 +121,11 @@ export class AuthService {
       userId: (user._id as mongoose.Types.ObjectId).toString(),
       email: user.email,
       role: user.role,
-      organizationId: user.organizationId?.toString() ?? "",
     };
+
+    if (user.organizationId) {
+      payload.organizationId = user.organizationId.toString();
+    }
 
     return jwt.sign(payload, env.JWT_SECRET, {
       expiresIn: env.JWT_EXPIRES_IN as string & jwt.SignOptions["expiresIn"],

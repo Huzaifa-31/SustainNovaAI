@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { apiClient } from "@/lib/api";
 
@@ -26,15 +27,31 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
+      if (!form.organizationName.trim()) {
+        setError("Organization name is required");
+        setLoading(false);
+        return;
+      }
+
       const { data } = await apiClient.post("/auth/register", {
         name: form.name,
         email: form.email,
         password: form.password,
-        organizationName: form.organizationName || undefined,
+        organizationName: form.organizationName.trim(),
       });
 
       if (data?.data?.token) {
         localStorage.setItem("auth_token", data.data.token);
+        const signInResult = await signIn("credentials", {
+          email: form.email,
+          password: form.password,
+          redirect: false,
+        });
+        if (signInResult?.error) {
+          setError("Account created but sign-in failed. Please log in manually.");
+          setLoading(false);
+          return;
+        }
         router.push("/audits");
         router.refresh();
       }
@@ -110,11 +127,12 @@ export default function RegisterPage() {
           <div>
             <label htmlFor="org" className="block text-sm font-medium text-gray-700">
               Organization name{" "}
-              <span className="text-gray-400">(optional — creates a new org)</span>
+              <span className="text-red-500">*</span>
             </label>
             <input
               id="org"
               type="text"
+              required
               value={form.organizationName}
               onChange={(e) => update("organizationName", e.target.value)}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"

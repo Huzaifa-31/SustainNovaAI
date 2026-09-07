@@ -9,6 +9,8 @@ interface Organization {
   description?: string;
   ownerUserId: string;
   memberIds: { _id: string; name: string; email: string; role: string }[] | string[];
+  services: string[];
+  tier: "basic" | "pro" | "enterprise";
   settings?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -42,7 +44,13 @@ export function useOrganization(orgId: string) {
 export function useCreateOrganization() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { name: string; description?: string }) => {
+    mutationFn: async (input: {
+      name: string;
+      description?: string;
+      ownerName: string;
+      ownerEmail: string;
+      ownerPassword: string;
+    }) => {
       const { data } = await apiClient.post("/organizations", input);
       return data.data as Organization;
     },
@@ -62,6 +70,29 @@ export function useUpdateOrganization() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["organizations"] });
       queryClient.invalidateQueries({ queryKey: ["organizations", variables.orgId] });
+    },
+  });
+}
+
+export function useUpdateOrganizationServices() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      orgId,
+      services,
+      tier,
+    }: {
+      orgId: string;
+      services?: string[];
+      tier?: "basic" | "pro" | "enterprise";
+    }) => {
+      const { data } = await apiClient.patch(`/organizations/${orgId}/services`, { services, tier });
+      return data.data as Organization;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["organizations", variables.orgId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

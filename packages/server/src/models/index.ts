@@ -1,5 +1,6 @@
 export { User, type IUser } from "./User";
 export { Organization, type IOrganization } from "./Organization";
+export { Factory, type IFactory } from "./Factory";
 export { Audit, type IAudit } from "./Audit";
 export { DocumentModel, type IDocument, type DocumentStatus } from "./Document";
 export { Chunk, type IChunk } from "./Chunk";

@@ -27,17 +27,22 @@ interface AuditListResponse {
 
 // --- Queries ---
 
-export function useAudits() {
+export function useAudits(organizationId?: string) {
   return useQuery({
-    queryKey: ["audits"],
+    queryKey: ["audits", organizationId],
     queryFn: async () => {
-      const { data } = await apiClient.get("/audits");
+      const { data } = await apiClient.get("/audits", {
+        params: organizationId ? { organizationId } : undefined,
+      });
       return data.data as Audit[];
     },
   });
 }
 
-export function useOrgAudits(orgId: string, params?: { status?: string; page?: number; limit?: number }) {
+export function useOrgAudits(
+  orgId: string,
+  params?: { status?: string; page?: number; limit?: number; factoryId?: string },
+) {
   return useQuery({
     queryKey: ["audits", "org", orgId, params],
     queryFn: async () => {
@@ -66,6 +71,7 @@ export function useCreateAudit() {
   return useMutation({
     mutationFn: async (input: {
       organizationId: string;
+      factoryId: string;
       name: string;
       description?: string;
       auditPeriod?: { start?: string; end?: string };
@@ -75,6 +81,7 @@ export function useCreateAudit() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["audits"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
