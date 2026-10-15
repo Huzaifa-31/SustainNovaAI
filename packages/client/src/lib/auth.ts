@@ -4,6 +4,8 @@ import Credentials from "next-auth/providers/credentials";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "default-secret-change-in-production-1234567890abcdef",
   providers: [
     Credentials({
       name: "credentials",
