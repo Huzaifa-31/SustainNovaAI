@@ -4,6 +4,8 @@ import { Organization } from "../../models/Organization";
 import { User } from "../../models/User";
 import { AppError } from "../../utils/AppError";
 
+import { withTransaction } from "../../config/database";
+
 const BCRYPT_ROUNDS = 12;
 
 export class OrganizationService {
@@ -17,11 +19,9 @@ export class OrganizationService {
       ownerPassword: string;
     },
   ) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-      const existingUser = await User.findOne({ email: input.ownerEmail.toLowerCase() }).session(session);
+    return withTransaction(async (session) => {
+      const existingUserQuery = User.findOne({ email: input.ownerEmail.toLowerCase() });
+      const existingUser = session ? await existingUserQuery.session(session) : await existingUserQuery;
       if (existingUser) {
         throw AppError.conflict("Owner email already registered", "DUPLICATE_EMAIL");
       }
@@ -37,7 +37,7 @@ export class OrganizationService {
             memberIds: [adminId],
           },
         ],
-        { session },
+        session ? { session } : undefined,
       );
 
       const [owner] = await User.create(
@@ -50,21 +50,19 @@ export class OrganizationService {
             organizationId: org._id,
           },
         ],
-        { session },
+        session ? { session } : undefined,
       );
 
       org.ownerUserId = owner._id as mongoose.Types.ObjectId;
       org.memberIds = [owner._id as mongoose.Types.ObjectId];
-      await org.save({ session });
+      if (session) {
+        await org.save({ session });
+      } else {
+        await org.save();
+      }
 
-      await session.commitTransaction();
       return org;
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    });
   }
 
   async listForUser(userId: string, role: string) {

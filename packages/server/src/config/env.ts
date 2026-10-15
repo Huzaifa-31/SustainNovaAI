@@ -6,8 +6,15 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().default(4000),
-  MONGODB_URI: z.string().min(1, "MONGODB_URI is required"),
-  REDIS_URL: z.string().default("redis://localhost:6379"),
+  MONGODB_URI: z
+    .string()
+    .default(() => process.env.MONGODB_URI || process.env.MONGO_URL || process.env.MONGO_PRIVATE_URL || process.env.DATABASE_URL || "")
+    .refine((val) => val.trim().length > 0, {
+      message: "MONGODB_URI is required (or set MONGO_URL / MONGO_PRIVATE_URL)",
+    }),
+  REDIS_URL: z
+    .string()
+    .default(() => process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL || "redis://localhost:6379"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),
   // Google Gemini — used for embeddings + chat (finding extraction, RAG Q&A)

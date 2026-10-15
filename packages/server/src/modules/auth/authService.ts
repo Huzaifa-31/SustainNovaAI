@@ -5,6 +5,7 @@ import { User, IUser } from "../../models/User";
 import { Organization } from "../../models/Organization";
 import { AppError } from "../../utils/AppError";
 import { env } from "../../config/env";
+import { withTransaction } from "../../config/database";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -33,11 +34,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
 
-    // Use a session so user + org creation are atomic
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
+    return withTransaction(async (session) => {
       let organizationId: mongoose.Types.ObjectId | undefined;
 
       if (input.organizationName) {
@@ -52,7 +49,7 @@ export class AuthService {
               memberIds: [tempUserId],
             },
           ],
-          { session },
+          session ? { session } : undefined,
         );
 
         organizationId = org._id as mongoose.Types.ObjectId;
@@ -68,10 +65,8 @@ export class AuthService {
               organizationId,
             },
           ],
-          { session },
+          session ? { session } : undefined,
         );
-
-        await session.commitTransaction();
 
         const token = this.generateToken(user);
         return { user, token };
@@ -79,12 +74,7 @@ export class AuthService {
 
       // organizationName is required by validation; this branch is unreachable.
       throw AppError.badRequest("Organization name is required", "ORGANIZATION_REQUIRED");
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    });
   }
 
   /**

@@ -14,7 +14,7 @@ async function bootstrap(): Promise<void> {
   // Start the document processing worker
   const documentWorker = createDocumentWorker();
 
-  app.listen(env.PORT, () => {
+  app.listen(env.PORT, "0.0.0.0", () => {
     logger.info(`SustainNova AI server running on port ${env.PORT} [${env.NODE_ENV}]`);
   });
 
@@ -30,6 +30,7 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((error) => {
-  logger.error({ error }, "Failed to start server");
+  const err = error as Error;
+  logger.error({ err }, `Failed to start server: ${err.message}`);
   process.exit(1);
 });

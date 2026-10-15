@@ -64,7 +64,6 @@ const capSchema = new Schema<ICAP>(
       type: Schema.Types.ObjectId,
       ref: "Finding",
       required: true,
-      index: true,
     },
     auditId: {
       type: Schema.Types.ObjectId,
