@@ -9,6 +9,9 @@ router.use(authenticate);
 // List CAPs for an audit (before :id routes)
 router.get("/", CAPController.list);
 
+// CAPs across the user's organization, grouped by factory (must come before :id routes)
+router.get("/organization", CAPController.listForOrganization);
+
 // Summary endpoint
 router.get("/summary", CAPController.summary);
 

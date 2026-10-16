@@ -3,6 +3,7 @@ import { capService } from "./capService";
 import { AppError } from "../../utils/AppError";
 import {
   listCapsQuerySchema,
+  organizationCapsQuerySchema,
   generateCapsSchema,
   updateCapSchema,
   capParamsSchema,
@@ -11,6 +12,41 @@ import {
 } from "./capValidation";
 
 export class CAPController {
+  /**
+   * GET /caps/organization?factoryId=...&status=...&priority=...
+   * CAPs across the caller's organization, with factory breakdown.
+   */
+  static async listForOrganization(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = organizationCapsQuerySchema.parse(req.query);
+      const result = await capService.listForOrganization(
+        {
+          id: req.user!.id,
+          role: req.user!.role,
+          organizationId: req.user!.organizationId?.toString(),
+        },
+        query,
+      );
+
+      res.json({
+        success: true,
+        data: result.caps,
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total: result.total,
+          totalPages: Math.max(1, Math.ceil(result.total / query.limit)),
+        },
+        factories: result.factories,
+        totals: result.totals,
+        byPriority: result.byPriority,
+        organizations: result.organizations,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /**
    * GET /caps?auditId=...&status=...&priority=...
    */
