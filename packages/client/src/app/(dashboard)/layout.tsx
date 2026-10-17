@@ -13,7 +13,7 @@ import {
   ClipboardCheck,
   Building2,
   Factory,
-  BarChart3,
+  // BarChart3, // re-enable together with the Reports sidebar item
   Sparkles,
   Settings,
   HelpCircle,
@@ -37,8 +37,8 @@ const orgSidebarItems = [
   { href: "/audits/compare", label: "Compare Reports", icon: GitCompare },
   { href: "/findings", label: "Findings", icon: Search },
   { href: "/caps", label: "Corrective Actions", icon: ClipboardCheck },
-  { href: "/suppliers", label: "Suppliers / Sites", icon: Building2 },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
+  // { href: "/suppliers", label: "Suppliers / Sites", icon: Building2 },
+  // { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/assistant", label: "AI Assistant", icon: Sparkles },
 ];
 
@@ -143,7 +143,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </nav>
 
-        {/* AI Assistant Promo */}
+        {/* AI Assistant Promo (hidden for now)
         <div className="mx-4 mb-4 rounded-xl bg-gradient-to-br from-[#1e3a5f] to-[#0f2444] p-4">
           <div className="mb-2 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
@@ -164,6 +164,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span>→</span>
           </Link>
         </div>
+        */}
       </aside>
 
       {/* Main content */}

@@ -9,6 +9,9 @@ router.use(authenticate);
 // List findings for an audit (must come before :id routes)
 router.get("/", FindingController.list);
 
+// Findings across the user's organization, grouped by factory (must come before :id routes)
+router.get("/organization", FindingController.listForOrganization);
+
 // Summary stats
 router.get("/summary", FindingController.summary);
 

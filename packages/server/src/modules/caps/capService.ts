@@ -1,4 +1,9 @@
+import mongoose from "mongoose";
 import { CAP, ICAP } from "../../models/CAP";
+import { Finding } from "../../models/Finding";
+import { Factory } from "../../models/Factory";
+import { Organization } from "../../models/Organization";
+import type { OrganizationCapsQuery } from "./capValidation";
 import { Audit } from "../../models";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
@@ -7,6 +12,185 @@ import { notificationService } from "../notifications/notificationService";
 import { auditLogService } from "../auditLogs/auditLogService";
 
 class CAPService {
+  /**
+   * List CAPs across an organization (grouped by factory).
+   * - organization users: scoped to their own organization(s)
+   * - admins: all organizations, optionally narrowed with organizationId
+   */
+  async listForOrganization(
+    user: { id: string; role: string; organizationId?: string },
+    query: OrganizationCapsQuery,
+  ) {
+    const toObjectId = (value: string, label: string) => {
+      if (!mongoose.Types.ObjectId.isValid(value)) {
+        throw AppError.badRequest(`Invalid ${label}`);
+      }
+      return new mongoose.Types.ObjectId(value);
+    };
+
+    // 1. Resolve which organizations the caller may see (null = all, admin only)
+    let orgIds: mongoose.Types.ObjectId[] | null;
+    if (user.role === "admin") {
+      orgIds = query.organizationId ? [toObjectId(query.organizationId, "organizationId")] : null;
+    } else {
+      const owned = await Organization.find({
+        $or: [{ ownerUserId: user.id }, { memberIds: user.id }],
+      })
+        .select("_id")
+        .lean();
+      const ownIds = new Set(owned.map((o) => o._id.toString()));
+      if (user.organizationId) ownIds.add(user.organizationId);
+      if (ownIds.size === 0) {
+        throw AppError.forbidden("You are not a member of any organization");
+      }
+      if (query.organizationId) {
+        if (!ownIds.has(query.organizationId)) {
+          throw AppError.forbidden("You are not a member of this organization");
+        }
+        orgIds = [toObjectId(query.organizationId, "organizationId")];
+      } else {
+        orgIds = [...ownIds].map((id) => new mongoose.Types.ObjectId(id));
+      }
+    }
+
+    const orgFilter = orgIds ? { organizationId: { $in: orgIds } } : {};
+
+    // 2. Load audits, factories and organizations in scope
+    const [scopeAudits, factories, organizations] = await Promise.all([
+      Audit.find(orgFilter).select("name factoryId organizationId").lean(),
+      Factory.find(orgFilter).sort({ name: 1 }).lean(),
+      Organization.find(orgIds ? { _id: { $in: orgIds } } : {}).select("name").sort({ name: 1 }).lean(),
+    ]);
+
+    const orgNameMap = new Map(organizations.map((o) => [o._id.toString(), o.name]));
+    const factoryMap = new Map(factories.map((f) => [f._id.toString(), f]));
+    const auditMap = new Map(scopeAudits.map((a) => [a._id.toString(), a]));
+
+    // 3. Per-factory summary (ignores list filters so the cards stay stable)
+    const statAgg = (await CAP.aggregate([
+      { $match: { auditId: { $in: scopeAudits.map((a) => a._id) } } },
+      {
+        $group: {
+          _id: { auditId: "$auditId", status: "$status", priority: "$priority", overdue: "$isOverdue" },
+          count: { $sum: 1 },
+        },
+      },
+    ])) as Array<{
+      _id: { auditId: mongoose.Types.ObjectId; status: string; priority: string; overdue: boolean };
+      count: number;
+    }>;
+
+    const emptyStats = () => ({ total: 0, open: 0, inProgress: 0, closed: 0, overdue: 0 });
+    const factoryStats = new Map<string, ReturnType<typeof emptyStats>>();
+    const totals = emptyStats();
+    const byPriority: Record<string, number> = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+
+    for (const row of statAgg) {
+      const audit = auditMap.get(row._id.auditId.toString());
+      if (!audit) continue;
+      const key = audit.factoryId.toString();
+      const stats = factoryStats.get(key) ?? emptyStats();
+      for (const target of [stats, totals]) {
+        target.total += row.count;
+        if (["draft", "approved", "assigned"].includes(row._id.status)) target.open += row.count;
+        else if (["in_progress", "evidence_submitted", "review"].includes(row._id.status)) target.inProgress += row.count;
+        else if (row._id.status === "closed") target.closed += row.count;
+        if (row._id.overdue) target.overdue += row.count;
+      }
+      factoryStats.set(key, stats);
+      byPriority[row._id.priority] = (byPriority[row._id.priority] ?? 0) + row.count;
+    }
+
+    const factorySummary = factories.map((f) => ({
+      _id: f._id.toString(),
+      name: f.name,
+      location: f.location,
+      organizationId: f.organizationId.toString(),
+      organizationName: orgNameMap.get(f.organizationId.toString()) ?? "",
+      ...(factoryStats.get(f._id.toString()) ?? emptyStats()),
+    }));
+
+    // 4. Filtered, paginated list
+    const listAuditIds = scopeAudits
+      .filter(
+        (a) =>
+          (!query.factoryId || a.factoryId.toString() === query.factoryId) &&
+          (!query.auditId || a._id.toString() === query.auditId),
+      )
+      .map((a) => a._id);
+
+    const filter: Record<string, unknown> = { auditId: { $in: listAuditIds } };
+    if (query.status) filter.status = query.status;
+    if (query.priority) filter.priority = query.priority;
+    if (query.search) {
+      const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [
+        { correctiveAction: { $regex: escaped, $options: "i" } },
+        { rootCause: { $regex: escaped, $options: "i" } },
+        { responsibleRole: { $regex: escaped, $options: "i" } },
+      ];
+    }
+
+    const [rawCaps, total] = await Promise.all([
+      CAP.aggregate<Record<string, any>>([
+        { $match: filter },
+        {
+          $addFields: {
+            priorityWeight: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$priority", "Critical"] }, then: 4 },
+                  { case: { $eq: ["$priority", "High"] }, then: 3 },
+                  { case: { $eq: ["$priority", "Medium"] }, then: 2 },
+                  { case: { $eq: ["$priority", "Low"] }, then: 1 },
+                ],
+                default: 0,
+              },
+            },
+          },
+        },
+        { $sort: { priorityWeight: -1, createdAt: -1 } },
+        { $skip: (query.page - 1) * query.limit },
+        { $limit: query.limit },
+      ]),
+      CAP.countDocuments(filter),
+    ]);
+
+    const linkedFindings = await Finding.find({
+      _id: { $in: rawCaps.map((c) => c.findingId) },
+    })
+      .select("title category severity")
+      .lean();
+    const findingMap = new Map(linkedFindings.map((f) => [f._id.toString(), f]));
+
+    const caps = rawCaps.map((c) => {
+      const audit = auditMap.get(c.auditId.toString());
+      const factory = audit ? factoryMap.get(audit.factoryId.toString()) : undefined;
+      const finding = findingMap.get(c.findingId.toString());
+      return {
+        ...c,
+        auditName: audit?.name ?? "Unknown audit",
+        factoryId: audit?.factoryId.toString(),
+        factoryName: factory?.name ?? "Unknown factory",
+        organizationName: orgNameMap.get(c.organizationId.toString()) ?? "",
+        findingTitle: finding?.title,
+        findingCategory: finding?.category,
+      };
+    });
+
+    return {
+      caps,
+      total,
+      factories: factorySummary,
+      totals,
+      byPriority,
+      organizations:
+        user.role === "admin"
+          ? organizations.map((o) => ({ _id: o._id.toString(), name: o.name }))
+          : undefined,
+    };
+  }
+
   /**
    * List CAPs for an audit with filters
    */

@@ -69,7 +69,65 @@ interface FindingListResponse {
   totalPages: number;
 }
 
+export interface OrgFindingRecord extends FindingRecord {
+  auditName: string;
+  factoryId?: string;
+  factoryName: string;
+  organizationName: string;
+}
+
+export interface FactoryFindingSummary {
+  _id: string;
+  name: string;
+  location?: string;
+  organizationId: string;
+  organizationName: string;
+  total: number;
+  Critical: number;
+  High: number;
+  Medium: number;
+  Low: number;
+}
+
+export interface OrgFindingListResponse {
+  findings: OrgFindingRecord[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  factories: FactoryFindingSummary[];
+  bySeverity: Record<FindingSeverity, number>;
+  organizations?: Array<{ _id: string; name: string }>;
+}
+
 // --- Queries ---
+
+export function useOrganizationFindings(params?: {
+  organizationId?: string;
+  factoryId?: string;
+  severity?: FindingSeverity;
+  category?: FindingCategory;
+  reviewStatus?: ReviewStatus;
+  status?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery({
+    queryKey: ["findings", "organization", params],
+    queryFn: async () => {
+      const { data } = await apiClient.get("/findings/organization", { params });
+      return {
+        findings: data.data as OrgFindingRecord[],
+        ...data.pagination,
+        factories: data.factories,
+        bySeverity: data.bySeverity,
+        organizations: data.organizations,
+      } as OrgFindingListResponse;
+    },
+    placeholderData: (previous) => previous,
+  });
+}
 
 export function useFindings(
   auditId: string,

@@ -3,6 +3,7 @@ import { findingService } from "./findingService";
 import { AppError } from "../../utils/AppError";
 import {
   listFindingsQuerySchema,
+  organizationFindingsQuerySchema,
   updateFindingSchema,
   findingParamsSchema,
 } from "./findingValidation";
@@ -25,6 +26,40 @@ export class FindingController {
           total: result.total,
           totalPages: Math.ceil(result.total / query.limit),
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /findings/organization?factoryId=...&severity=...
+   * Findings across the caller's organization, with factory breakdown.
+   */
+  static async listForOrganization(req: Request, res: Response, next: NextFunction) {
+    try {
+      const query = organizationFindingsQuerySchema.parse(req.query);
+      const result = await findingService.listForOrganization(
+        {
+          id: req.user!.id,
+          role: req.user!.role,
+          organizationId: req.user!.organizationId?.toString(),
+        },
+        query,
+      );
+
+      res.json({
+        success: true,
+        data: result.findings,
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total: result.total,
+          totalPages: Math.max(1, Math.ceil(result.total / query.limit)),
+        },
+        factories: result.factories,
+        bySeverity: result.bySeverity,
+        organizations: result.organizations,
       });
     } catch (error) {
       next(error);

@@ -18,6 +18,29 @@ export const listCapsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).default(20),
 });
 
+export const organizationCapsQuerySchema = z.object({
+  organizationId: z.string().optional(),
+  factoryId: z.string().optional(),
+  auditId: z.string().optional(),
+  status: z
+    .enum([
+      "draft",
+      "approved",
+      "assigned",
+      "in_progress",
+      "evidence_submitted",
+      "review",
+      "closed",
+    ])
+    .optional(),
+  priority: z.enum(["Critical", "High", "Medium", "Low"]).optional(),
+  search: z.string().trim().max(200).optional(),
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(100).default(20),
+});
+
+export type OrganizationCapsQuery = z.infer<typeof organizationCapsQuerySchema>;
+
 export const generateCapsSchema = z.object({
   auditId: z.string().min(1, "auditId is required"),
 });

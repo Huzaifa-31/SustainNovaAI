@@ -642,6 +642,12 @@ export default function DashboardPage() {
   const userName = session?.user?.name ?? "Admin";
   const role = session?.user?.role;
 
+  // Current month range, e.g. "Oct 1 - Oct 31, 2026"
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const dateRangeLabel = `${monthStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${monthEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -673,7 +679,7 @@ export default function DashboardPage() {
           </button>
           <button className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <Calendar className="h-4 w-4" />
-            May 1 - May 31, 2024
+            {dateRangeLabel}
           </button>
         </div>
       </div>

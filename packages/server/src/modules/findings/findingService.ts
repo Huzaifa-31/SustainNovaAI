@@ -1,5 +1,9 @@
 import { Finding, IFinding, SEVERITY_WEIGHT, type FindingSeverity } from "../../models/Finding";
+import mongoose from "mongoose";
 import { Audit } from "../../models";
+import { Factory } from "../../models/Factory";
+import { Organization } from "../../models/Organization";
+import type { OrganizationFindingsQuery } from "./findingValidation";
 import { AppError } from "../../utils/AppError";
 import { organizationService } from "../organizations/organizationService";
 import { findingExtractionService } from "../../services/findingExtractionService";
@@ -44,6 +48,143 @@ class FindingService {
     ]);
 
     return { findings, total };
+  }
+
+  /**
+   * List findings across an organization (grouped by factory).
+   * - organization users: scoped to their own organization(s)
+   * - admins: all organizations, optionally narrowed with organizationId
+   */
+  async listForOrganization(
+    user: { id: string; role: string; organizationId?: string },
+    query: OrganizationFindingsQuery,
+  ) {
+    const toObjectId = (value: string, label: string) => {
+      if (!mongoose.Types.ObjectId.isValid(value)) {
+        throw AppError.badRequest(`Invalid ${label}`);
+      }
+      return new mongoose.Types.ObjectId(value);
+    };
+
+    // 1. Resolve which organizations the caller may see (null = all, admin only)
+    let orgIds: mongoose.Types.ObjectId[] | null;
+    if (user.role === "admin") {
+      orgIds = query.organizationId ? [toObjectId(query.organizationId, "organizationId")] : null;
+    } else {
+      const owned = await Organization.find({
+        $or: [{ ownerUserId: user.id }, { memberIds: user.id }],
+      })
+        .select("_id")
+        .lean();
+      const ownIds = new Set(owned.map((o) => o._id.toString()));
+      if (user.organizationId) ownIds.add(user.organizationId);
+      if (ownIds.size === 0) {
+        throw AppError.forbidden("You are not a member of any organization");
+      }
+      if (query.organizationId) {
+        if (!ownIds.has(query.organizationId)) {
+          throw AppError.forbidden("You are not a member of this organization");
+        }
+        orgIds = [toObjectId(query.organizationId, "organizationId")];
+      } else {
+        orgIds = [...ownIds].map((id) => new mongoose.Types.ObjectId(id));
+      }
+    }
+
+    const orgFilter = orgIds ? { organizationId: { $in: orgIds } } : {};
+
+    // 2. Load audits, factories and organizations in scope
+    const [scopeAudits, factories, organizations] = await Promise.all([
+      Audit.find(orgFilter).select("name factoryId organizationId").lean(),
+      Factory.find(orgFilter).sort({ name: 1 }).lean(),
+      Organization.find(orgIds ? { _id: { $in: orgIds } } : {}).select("name").sort({ name: 1 }).lean(),
+    ]);
+
+    const orgNameMap = new Map(organizations.map((o) => [o._id.toString(), o.name]));
+    const factoryMap = new Map(factories.map((f) => [f._id.toString(), f]));
+    const auditMap = new Map(scopeAudits.map((a) => [a._id.toString(), a]));
+
+    // 3. Per-factory severity summary (ignores list filters so the cards stay stable)
+    const severityAgg = await Finding.aggregate([
+      { $match: { auditId: { $in: scopeAudits.map((a) => a._id) } } },
+      { $group: { _id: { auditId: "$auditId", severity: "$severity" }, count: { $sum: 1 } } },
+    ]);
+
+    const factoryStats = new Map<string, { total: number; Critical: number; High: number; Medium: number; Low: number }>();
+    const bySeverity = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+    for (const row of severityAgg as Array<{ _id: { auditId: mongoose.Types.ObjectId; severity: keyof typeof bySeverity }; count: number }>) {
+      const audit = auditMap.get(row._id.auditId.toString());
+      if (!audit) continue;
+      const key = audit.factoryId.toString();
+      const stats = factoryStats.get(key) ?? { total: 0, Critical: 0, High: 0, Medium: 0, Low: 0 };
+      stats.total += row.count;
+      stats[row._id.severity] += row.count;
+      factoryStats.set(key, stats);
+      bySeverity[row._id.severity] += row.count;
+    }
+
+    const factorySummary = factories.map((f) => ({
+      _id: f._id.toString(),
+      name: f.name,
+      location: f.location,
+      organizationId: f.organizationId.toString(),
+      organizationName: orgNameMap.get(f.organizationId.toString()) ?? "",
+      ...(factoryStats.get(f._id.toString()) ?? { total: 0, Critical: 0, High: 0, Medium: 0, Low: 0 }),
+    }));
+
+    // 4. Filtered, paginated list
+    const listAuditIds = scopeAudits
+      .filter(
+        (a) =>
+          (!query.factoryId || a.factoryId.toString() === query.factoryId) &&
+          (!query.auditId || a._id.toString() === query.auditId),
+      )
+      .map((a) => a._id);
+
+    const filter: Record<string, unknown> = { auditId: { $in: listAuditIds } };
+    if (query.severity) filter.severity = query.severity;
+    if (query.category) filter.category = query.category;
+    if (query.reviewStatus) filter.reviewStatus = query.reviewStatus;
+    if (query.status) filter.status = query.status;
+    if (query.search) {
+      const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [
+        { title: { $regex: escaped, $options: "i" } },
+        { category: { $regex: escaped, $options: "i" } },
+      ];
+    }
+
+    const [rawFindings, total] = await Promise.all([
+      Finding.find(filter)
+        .sort({ severityWeight: -1, createdAt: -1 })
+        .skip((query.page - 1) * query.limit)
+        .limit(query.limit)
+        .lean(),
+      Finding.countDocuments(filter),
+    ]);
+
+    const findings = rawFindings.map((f) => {
+      const audit = auditMap.get(f.auditId.toString());
+      const factory = audit ? factoryMap.get(audit.factoryId.toString()) : undefined;
+      return {
+        ...f,
+        auditName: audit?.name ?? "Unknown audit",
+        factoryId: audit?.factoryId.toString(),
+        factoryName: factory?.name ?? "Unknown factory",
+        organizationName: orgNameMap.get(f.organizationId.toString()) ?? "",
+      };
+    });
+
+    return {
+      findings,
+      total,
+      factories: factorySummary,
+      bySeverity,
+      organizations:
+        user.role === "admin"
+          ? organizations.map((o) => ({ _id: o._id.toString(), name: o.name }))
+          : undefined,
+    };
   }
 
   /**

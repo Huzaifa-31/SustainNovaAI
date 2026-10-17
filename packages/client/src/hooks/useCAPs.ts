@@ -65,7 +65,70 @@ interface CAPListResponse {
   totalPages: number;
 }
 
+export interface OrgCAPRecord extends CAPRecord {
+  auditName: string;
+  factoryId?: string;
+  factoryName: string;
+  organizationName: string;
+  findingTitle?: string;
+  findingCategory?: string;
+}
+
+export interface CAPBucketStats {
+  total: number;
+  open: number;
+  inProgress: number;
+  closed: number;
+  overdue: number;
+}
+
+export interface FactoryCAPSummary extends CAPBucketStats {
+  _id: string;
+  name: string;
+  location?: string;
+  organizationId: string;
+  organizationName: string;
+}
+
+export interface OrgCAPListResponse {
+  caps: OrgCAPRecord[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  factories: FactoryCAPSummary[];
+  totals: CAPBucketStats;
+  byPriority: Record<CAPPriority, number>;
+  organizations?: Array<{ _id: string; name: string }>;
+}
+
 // --- Queries ---
+
+export function useOrganizationCAPs(params?: {
+  organizationId?: string;
+  factoryId?: string;
+  status?: CAPStatus;
+  priority?: CAPPriority;
+  search?: string;
+  page?: number;
+  limit?: number;
+}) {
+  return useQuery({
+    queryKey: ["caps", "organization", params],
+    queryFn: async () => {
+      const { data } = await apiClient.get("/caps/organization", { params });
+      return {
+        caps: data.data as OrgCAPRecord[],
+        ...data.pagination,
+        factories: data.factories,
+        totals: data.totals,
+        byPriority: data.byPriority,
+        organizations: data.organizations,
+      } as OrgCAPListResponse;
+    },
+    placeholderData: (previous) => previous,
+  });
+}
 
 export function useCAPs(
   auditId: string,
@@ -178,7 +241,7 @@ export function useApproveCAP() {
       humanApproved: boolean;
     }) => {
       const { data } = await apiClient.post(`/caps/${capId}/approve`, {
-        humanApproved,
+        approved: humanApproved,
       });
       return data.data as CAPRecord;
     },
